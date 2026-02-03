@@ -1,9 +1,9 @@
 import yfinance as yf
-import constants
+import Constants
 import time
 
 def checkConnectionestablish():
-    ticker = yf.Ticker(constants.testCompany)
+    ticker = yf.Ticker(Constants.testCompany)
     data = ticker.history(period="1d")
     print (data)
 
@@ -11,9 +11,7 @@ checkConnectionestablish()
 
 def getLiveStatus(symbol):
     ticker = yf.Ticker(symbol)
-    while True:
-        data = ticker.history(interval = "1m", period = "1d")
-        print (data)
-        time.sleep(1000 * 60)
+    dataFrame = ticker.history(interval = "1m", period = "1d")
+    return dataFrame
 
 getLiveStatus("AAPL")
