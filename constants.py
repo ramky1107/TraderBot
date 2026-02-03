@@ -1,1 +1,1 @@
-testCompany = "AAPL"
+testCompany = "AAPL.us"
