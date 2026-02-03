@@ -1,1 +1,0 @@
-testCompany = "AAPL"

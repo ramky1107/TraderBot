@@ -1,6 +1,6 @@
 import pandas as pd
 from datetime import datetime
-import Constants
+import constants
 import time
 from typing import Literal
 

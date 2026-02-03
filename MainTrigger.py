@@ -1,9 +1,9 @@
 import FetchDataYFinance
 import DrawCanvas
-import Constants
+import constants
 import time
 
-companyName = Constants.testCompany
+companyName = constants.testCompany
 
 while True:
     dataFrame = FetchDataYFinance.getLiveStatus(companySymbol= companyName)
