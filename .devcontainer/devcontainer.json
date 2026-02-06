@@ -1,5 +1,13 @@
 {
-  "name": "Python Codespace",
-  "image": "mcr.microsoft.com/devcontainers/python:3.11",
-  "postCreateCommand": " sudo apt update && sudo apt install -y git-lfs && git lfs install && pip install -r requirements.txt"
+    "name": "Python Codespace",
+    "image": "mcr.microsoft.com/devcontainers/python:3.11",
+    "features": {
+        "ghcr.io/devcontainers/features/git-lfs:1": {}
+    },
+    "postCreateCommand": "pip install ruff -r requirements.txt",
+    "customizations": {
+        "vscode": {
+            "extensions": ["charliermarsh.ruff"]
+        }
+    }
 }
