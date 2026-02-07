@@ -6,9 +6,9 @@ import time
 companyName = constants.testCompany
 
 while True:
-    # dataFrame = FetchData.getLiveStatus(companySymbol= companyName)
-    dataFrame = FetchData.getYFinanceLiveStatus(companySymbol= companyName)
+    # dataFrame = fetchData.getLiveStatus(companySymbol= companyName)
+    dataFrame = fetchData.getYFinanceLiveStatus(companySymbol= companyName)
     print (dataFrame)
-    DrawCanvas.showCanvas(dataFrame=dataFrame)
+    # DrawCanvas.showCanvas(dataFrame=dataFrame)
     time.sleep (0.890)
     print ("ok")
