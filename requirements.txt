@@ -1,4 +1,4 @@
-yfinance==0.2.36
+yfinance==1.1.0
 mplfinance
 pandas
 matplotlib
