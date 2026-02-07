@@ -47,19 +47,15 @@ def fetch_stooq(
     df["Date"] = pd.to_datetime(df["Date"])
     df.set_index("Date", inplace=True)
     df.sort_index(inplace=True)
-
+    print("Hello world")
     return df
 
 def getLiveStatus(companySymbol):
     return fetch_stooq(symbol= companySymbol, interval='d')
 
-def getYFinanceLiveStatus():
+def getYFinanceLiveStatus(companyName, duration, interval):
     # Create a Ticker object for AAPL
-    aapl = yf.Ticker("AAPL")
-
-    # Fetch historical data (e.g., last 1 year)
-    # Periods: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max [7]
-    aapl_hist = aapl.history(period="1y")
-
-    # Display the first few rows
-    print(aapl_hist.head())
+    aapl = yf.Ticker(companyName)
+    aapl_hist = aapl.history(period=duration, interval = interval)
+    print(aapl_hist)
+    return aapl_hist
