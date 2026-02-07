@@ -2,3 +2,5 @@ yfinance==1.1.0
 mplfinance
 pandas
 matplotlib
+plotly
+dash
