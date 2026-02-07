@@ -3,6 +3,7 @@ from datetime import datetime
 import constants
 import time
 from typing import Literal
+import yfinance as yf
 
 def fetch_stooq(
     symbol: str,
@@ -51,3 +52,14 @@ def fetch_stooq(
 
 def getLiveStatus(companySymbol):
     return fetch_stooq(symbol= companySymbol, interval='d')
+
+def getYFinanceLiveStatus():
+    # Create a Ticker object for AAPL
+    aapl = yf.Ticker("AAPL")
+
+    # Fetch historical data (e.g., last 1 year)
+    # Periods: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max [7]
+    aapl_hist = aapl.history(period="1y")
+
+    # Display the first few rows
+    print(aapl_hist.head())

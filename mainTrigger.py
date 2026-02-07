@@ -1,4 +1,4 @@
-import fetchDataYFinance
+import fetchData
 import drawCanvas
 import constants
 import time
@@ -6,7 +6,8 @@ import time
 companyName = constants.testCompany
 
 while True:
-    dataFrame = FetchDataYFinance.getLiveStatus(companySymbol= companyName)
+    # dataFrame = FetchData.getLiveStatus(companySymbol= companyName)
+    dataFrame = FetchData.getYFinanceLiveStatus(companySymbol= companyName)
     print (dataFrame)
     DrawCanvas.showCanvas(dataFrame=dataFrame)
     time.sleep (0.890)
