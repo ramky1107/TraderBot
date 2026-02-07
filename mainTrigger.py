@@ -7,7 +7,7 @@ companyName = constants.testCompany
 
 while True:
     # dataFrame = fetchData.getLiveStatus(companySymbol= companyName)
-    dataFrame = fetchData.getYFinanceLiveStatus(companySymbol= companyName)
+    dataFrame = fetchData.getYFinanceLiveStatus()
     print (dataFrame)
     # DrawCanvas.showCanvas(dataFrame=dataFrame)
     time.sleep (0.890)
