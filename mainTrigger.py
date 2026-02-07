@@ -3,6 +3,10 @@ import drawCanvas
 import constants
 import time
 
+import constants
+import drawCanvas
+import fetchDataYFinance
+
 companyName = constants.testCompany
 
 while True:
