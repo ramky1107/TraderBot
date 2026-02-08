@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 </head>
+
 <body>
     <!-- Top Toolbar -->
     <div class="toolbar">
@@ -25,6 +27,30 @@
         <div id="chart"></div>
     </div>
 
+    <!-- Chatbot Widget -->
+    <div class="chatbot-container" id="chatbotContainer">
+        <div class="chatbot-header">
+            <span class="chatbot-title">📈 Stock Assistant</span>
+            <button class="chatbot-close" id="chatbotClose">✕</button>
+        </div>
+        <div class="chatbot-messages" id="chatbotMessages">
+            <div class="chatbot-message bot-message">
+                Hi! I'm your stock market assistant. Ask me anything about stocks, trading strategies, or technical
+                indicators!
+            </div>
+        </div>
+        <div class="chatbot-input-container">
+            <input type="text" id="chatbotInput" class="chatbot-input" placeholder="Ask about stocks...">
+            <button id="chatbotSend" class="chatbot-send">Send</button>
+        </div>
+    </div>
+
+    <!-- Chatbot Toggle Button -->
+    <button class="chatbot-toggle" id="chatbotToggle">
+        💬
+    </button>
+
     <script src="app.js"></script>
 </body>
+
 </html>

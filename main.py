@@ -5,9 +5,22 @@ import strategies
 import json
 from datetime import datetime, timedelta
 import pandas as pd
+import numpy as np
+import google.generativeai as genai
+import os
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
+
+# Initialize Gemini API (Free tier - no billing)
+# Get API key from environment variable or use a default (you should set GEMINI_API_KEY)
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    gemini_model = genai.GenerativeModel('gemini-pro')
+else:
+    gemini_model = None
+    print("WARNING: GEMINI_API_KEY not set. Chatbot will not work.")
 
 # Cache for historical data
 data_cache = {}
@@ -40,8 +53,8 @@ def get_stock_data():
             
             # If cache is less than 1 hour old, fetch only latest data
             if datetime.now() - last_update < timedelta(hours=1):
-                # Fetch only today's data (1d period, 1m interval for live updates)
-                live_df = data_manager.fetch_market_data(ticker=ticker, period="1d", interval="1m")
+                # Fetch recent data with same interval (1d) to avoid mixing intervals
+                live_df = data_manager.fetch_market_data(ticker=ticker, period="5d", interval="1d")
                 
                 if not live_df.empty:
                     # Merge with historical data
@@ -87,7 +100,7 @@ def get_stock_data():
         # Apply strategies
         df = strategies.apply_strategies(df)
         
-        # Prepare response data
+        # Prepare response data (convert NaN to None for valid JSON)
         response_data = {
             'ticker': ticker,
             'dates': df.index.strftime('%Y-%m-%d %H:%M:%S').tolist(),
@@ -96,8 +109,8 @@ def get_stock_data():
             'low': df['Low'].tolist(),
             'close': df['Close'].tolist(),
             'volume': df['Volume'].tolist(),
-            'sma_20': df['SMA_20'].fillna(0).tolist() if 'SMA_20' in df.columns else [],
-            'rsi': df['RSI'].fillna(0).tolist() if 'RSI' in df.columns else []
+            'sma_20': [None if pd.isna(x) else x for x in df['SMA_20']] if 'SMA_20' in df.columns else [],
+            'rsi': [None if pd.isna(x) else x for x in df['RSI']] if 'RSI' in df.columns else []
         }
         
         return jsonify(response_data)
@@ -105,6 +118,39 @@ def get_stock_data():
     except Exception as e:
         print(f"Error in API: {str(e)}")  # Debug logging
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chatbot', methods=['POST'])
+def chatbot():
+    """API endpoint for stock-related chatbot queries using free Gemini API"""
+    try:
+        if not gemini_model:
+            return jsonify({'error': 'Gemini API not configured. Please set GEMINI_API_KEY environment variable.'}), 500
+        
+        data = request.get_json()
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return jsonify({'error': 'No message provided'}), 400
+        
+        # Add context to make responses stock-focused
+        context = """You are a helpful stock market assistant. Answer questions about stocks, 
+        trading strategies, technical indicators, market analysis, and financial concepts. 
+        Keep responses concise and informative. If asked about specific stock prices or real-time data, 
+        remind users to check the chart or use the ticker search feature."""
+        
+        full_prompt = f"{context}\n\nUser question: {user_message}"
+        
+        # Generate response using Gemini (free tier)
+        response = gemini_model.generate_content(full_prompt)
+        
+        return jsonify({
+            'response': response.text,
+            'success': True
+        })
+        
+    except Exception as e:
+        print(f"Chatbot error: {str(e)}")
+        return jsonify({'error': f'Failed to get response: {str(e)}'}), 500
 
 if __name__ == '__main__':
     print("Starting Flask Server...")

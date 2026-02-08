@@ -5,10 +5,18 @@
         "ghcr.io/devcontainers/features/git-lfs:1": {}
         // "ghcr.io/devcontainers/features/google-cloud-cli:1": {}
     },
-    "postCreateCommand": "pip install ruff -r requirements.txt && python main.py",
+    "postCreateCommand": "pip install -r requirements.txt",
     "customizations": {
         "vscode": {
-            "extensions": ["charliermarsh.ruff"]
+            "extensions": [
+                "charliermarsh.ruff"
+            ]
         }
+    },
+    "remoteEnv": {
+        "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}"
+    },
+    "containerEnv": {
+        "PYTHONUNBUFFERED": "1"
     }
 }

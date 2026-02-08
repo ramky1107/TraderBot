@@ -65,7 +65,7 @@ function renderChart(data) {
     // Create traces
     const traces = [];
 
-    // Candlestick
+    // Candlestick with increased width
     traces.push({
         type: 'candlestick',
         x: dates,
@@ -75,39 +75,68 @@ function renderChart(data) {
         close: close,
         name: 'OHLC',
         xaxis: 'x',
-        yaxis: 'y'
+        yaxis: 'y',
+        increasing: { line: { color: '#26A69A' } },
+        decreasing: { line: { color: '#EF5350' } }
     });
 
-    // 20-Day MA (only plot if data exists and has non-zero values)
+    // 20-Day Moving Average (only plot valid data points, filter out null values)
     if (sma_20 && sma_20.length > 0) {
-        const hasValidData = sma_20.some(val => val !== 0 && val !== null && !isNaN(val));
-        if (hasValidData) {
+        // Filter to get only valid SMA values and their corresponding dates
+        const validSmaData = [];
+        const validSmaDates = [];
+
+        for (let i = 0; i < sma_20.length; i++) {
+            const val = sma_20[i];
+            if (val !== null && !isNaN(val) && val > 0) {
+                validSmaData.push(val);
+                validSmaDates.push(dates[i]);
+            }
+        }
+
+        // Only plot if we have at least 10 valid data points
+        if (validSmaData.length >= 10) {
             traces.push({
                 type: 'scatter',
-                x: dates,
-                y: sma_20,
+                x: validSmaDates,
+                y: validSmaData,
                 mode: 'lines',
                 name: '20-Day MA',
                 line: { color: '#FF9800', width: 2 },
                 xaxis: 'x',
-                yaxis: 'y'
+                yaxis: 'y',
+                connectgaps: false
             });
         }
     }
 
-    // RSI (only plot if data exists and has non-zero values)
+
+    // RSI (only plot valid data points, filter out null/zero/NaN values)
     if (rsi && rsi.length > 0) {
-        const hasValidData = rsi.some(val => val !== 0 && val !== null && !isNaN(val));
-        if (hasValidData) {
+        // Filter to get only valid RSI values and their corresponding dates
+        const validRsiData = [];
+        const validRsiDates = [];
+
+        for (let i = 0; i < rsi.length; i++) {
+            const val = rsi[i];
+            if (val !== 0 && val !== null && !isNaN(val) && val > 0 && val < 100) {
+                validRsiData.push(val);
+                validRsiDates.push(dates[i]);
+            }
+        }
+
+        // Only plot if we have at least 10 valid data points
+        if (validRsiData.length >= 10) {
             traces.push({
                 type: 'scatter',
-                x: dates,
-                y: rsi,
+                x: validRsiDates,
+                y: validRsiData,
                 mode: 'lines',
                 name: 'RSI',
                 line: { color: '#9C27B0', width: 2 },
                 xaxis: 'x2',
-                yaxis: 'y2'
+                yaxis: 'y2',
+                connectgaps: false
             });
         }
     }
@@ -263,3 +292,118 @@ window.addEventListener('beforeunload', () => {
         clearInterval(autoRefreshTimer);
     }
 });
+
+// ===== CHATBOT FUNCTIONALITY =====
+
+// Chatbot DOM Elements
+const chatbotToggle = document.getElementById('chatbotToggle');
+const chatbotContainer = document.getElementById('chatbotContainer');
+const chatbotClose = document.getElementById('chatbotClose');
+const chatbotInput = document.getElementById('chatbotInput');
+const chatbotSend = document.getElementById('chatbotSend');
+const chatbotMessages = document.getElementById('chatbotMessages');
+
+// Chatbot State
+let isChatbotOpen = false;
+
+// Initialize chatbot event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    chatbotToggle.addEventListener('click', toggleChatbot);
+    chatbotClose.addEventListener('click', toggleChatbot);
+    chatbotSend.addEventListener('click', sendMessage);
+    chatbotInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+});
+
+// Toggle chatbot visibility
+function toggleChatbot() {
+    isChatbotOpen = !isChatbotOpen;
+    chatbotContainer.classList.toggle('active', isChatbotOpen);
+
+    if (isChatbotOpen) {
+        chatbotInput.focus();
+    }
+}
+
+// Send message to chatbot
+async function sendMessage() {
+    const message = chatbotInput.value.trim();
+
+    if (!message) return;
+
+    // Add user message to chat
+    addMessage(message, 'user');
+    chatbotInput.value = '';
+
+    // Disable input while processing
+    chatbotSend.disabled = true;
+    chatbotInput.disabled = true;
+
+    // Show typing indicator
+    const typingIndicator = addTypingIndicator();
+
+    try {
+        const response = await fetch('/api/chatbot', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ message })
+        });
+
+        const data = await response.json();
+
+        // Remove typing indicator
+        typingIndicator.remove();
+
+        if (data.error) {
+            addMessage(`Error: ${data.error}`, 'bot');
+        } else {
+            addMessage(data.response, 'bot');
+        }
+
+    } catch (error) {
+        typingIndicator.remove();
+        addMessage('Sorry, I encountered an error. Please try again.', 'bot');
+        console.error('Chatbot error:', error);
+    } finally {
+        // Re-enable input
+        chatbotSend.disabled = false;
+        chatbotInput.disabled = false;
+        chatbotInput.focus();
+    }
+}
+
+// Add message to chat window
+function addMessage(text, type) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chatbot-message ${type}-message`;
+    messageDiv.textContent = text;
+
+    chatbotMessages.appendChild(messageDiv);
+
+    // Scroll to bottom
+    chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
+
+    return messageDiv;
+}
+
+// Add typing indicator
+function addTypingIndicator() {
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'chatbot-message bot-message typing-indicator';
+    typingDiv.innerHTML = `
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+    `;
+
+    chatbotMessages.appendChild(typingDiv);
+    chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
+
+    return typingDiv;
+}
