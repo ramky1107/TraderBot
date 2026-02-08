@@ -52,8 +52,8 @@ def get_stock_data():
                     combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
                     combined_df = combined_df.sort_index()
                     
-                    # Keep only last 60 days
-                    cutoff_date = datetime.now() - timedelta(days=60)
+                    # Keep only last 60 days (make cutoff_date timezone-aware)
+                    cutoff_date = pd.Timestamp.now(tz='Asia/Kolkata') - timedelta(days=60)
                     combined_df = combined_df[combined_df.index >= cutoff_date]
                     
                     # Update cache

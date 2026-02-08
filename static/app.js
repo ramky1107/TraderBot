@@ -78,32 +78,38 @@ function renderChart(data) {
         yaxis: 'y'
     });
 
-    // 20-Day MA
+    // 20-Day MA (only plot if data exists and has non-zero values)
     if (sma_20 && sma_20.length > 0) {
-        traces.push({
-            type: 'scatter',
-            x: dates,
-            y: sma_20,
-            mode: 'lines',
-            name: '20-Day MA',
-            line: { color: '#FF9800', width: 2 },
-            xaxis: 'x',
-            yaxis: 'y'
-        });
+        const hasValidData = sma_20.some(val => val !== 0 && val !== null && !isNaN(val));
+        if (hasValidData) {
+            traces.push({
+                type: 'scatter',
+                x: dates,
+                y: sma_20,
+                mode: 'lines',
+                name: '20-Day MA',
+                line: { color: '#FF9800', width: 2 },
+                xaxis: 'x',
+                yaxis: 'y'
+            });
+        }
     }
 
-    // RSI
+    // RSI (only plot if data exists and has non-zero values)
     if (rsi && rsi.length > 0) {
-        traces.push({
-            type: 'scatter',
-            x: dates,
-            y: rsi,
-            mode: 'lines',
-            name: 'RSI',
-            line: { color: '#9C27B0', width: 2 },
-            xaxis: 'x2',
-            yaxis: 'y2'
-        });
+        const hasValidData = rsi.some(val => val !== 0 && val !== null && !isNaN(val));
+        if (hasValidData) {
+            traces.push({
+                type: 'scatter',
+                x: dates,
+                y: rsi,
+                mode: 'lines',
+                name: 'RSI',
+                line: { color: '#9C27B0', width: 2 },
+                xaxis: 'x2',
+                yaxis: 'y2'
+            });
+        }
     }
 
     // Volume
