@@ -1,5 +1,17 @@
 import pandas as pd
 
+def calculate_rsi(series, period=14):
+    """
+    Calculate RSI (Relative Strength Index) for a given series.
+    """
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
 def apply_strategies(df):
     """
     Applies technical indicators to the DataFrame.
@@ -8,10 +20,9 @@ def apply_strategies(df):
         return df
     
     # Strategy 1: 20-Period Simple Moving Average (SMA)
-    # Note: On a 1m chart, this is the average of the last 20 minutes.
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     
-    # Future Strategy: Add RSI, MACD, etc. here
-    # df['RSI'] = ...
+    # Strategy 2: RSI (Relative Strength Index)
+    df['RSI'] = calculate_rsi(df['Close'], period=14)
     
     return df

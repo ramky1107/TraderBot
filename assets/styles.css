@@ -1,0 +1,151 @@
+/* TradingView-Inspired Stock Simulator Styles */
+
+/* Import Ubuntu Font */
+@import url('https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap');
+
+/* Root Variables */
+:root {
+    --bg-primary: #131722;
+    --bg-secondary: #1E222D;
+    --bg-panel: #2A2E39;
+    --border-color: #2A2E39;
+    --text-primary: #D1D4DC;
+    --text-secondary: #787B86;
+    --accent-blue: #2962FF;
+    --success-green: #26A69A;
+    --danger-red: #EF5350;
+}
+
+/* Global Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Ubuntu', sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    overflow: hidden;
+    height: 100vh;
+}
+
+/* Main Container */
+#react-entry-point {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Toolbar Styles */
+.toolbar-container {
+    background-color: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 50px;
+    flex-shrink: 0;
+}
+
+.toolbar-label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ticker-input {
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 6px 12px;
+    font-size: 14px;
+    font-family: 'Ubuntu', sans-serif;
+    border-radius: 4px;
+    width: 180px;
+    transition: border-color 0.2s;
+}
+
+.ticker-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+
+.ticker-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.fetch-button {
+    background-color: var(--accent-blue);
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    font-size: 14px;
+    font-family: 'Ubuntu', sans-serif;
+    font-weight: 500;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.fetch-button:hover {
+    background-color: #1E53E5;
+}
+
+.fetch-button:active {
+    background-color: #1948CC;
+}
+
+/* Chart Container */
+.chart-container {
+    flex: 1;
+    overflow: hidden;
+    background-color: var(--bg-primary);
+    padding: 8px;
+}
+
+/* Dash Graph Overrides */
+.js-plotly-plot {
+    height: 100% !important;
+    width: 100% !important;
+}
+
+.plotly {
+    height: 100% !important;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--bg-panel);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #3A3E49;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .toolbar-container {
+        flex-wrap: wrap;
+        height: auto;
+        padding: 8px;
+    }
+    
+    .ticker-input {
+        width: 140px;
+    }
+}

@@ -3,8 +3,9 @@
     "image": "mcr.microsoft.com/devcontainers/python:3.11",
     "features": {
         "ghcr.io/devcontainers/features/git-lfs:1": {}
+        // "ghcr.io/devcontainers/features/google-cloud-cli:1": {}
     },
-    "postCreateCommand": "pip install ruff -r requirements.txt",
+    "postCreateCommand": "pip install ruff -r requirements.txt && python main.py",
     "customizations": {
         "vscode": {
             "extensions": ["charliermarsh.ruff"]
