@@ -3,4 +3,5 @@ mplfinance
 pandas
 matplotlib
 plotly
-dash
+flask
+flask-cors

@@ -1,69 +1,112 @@
-import dash
-from dash import dcc, html
-from dash.dependencies import Input, Output, State
+from flask import Flask, jsonify, send_from_directory, request
+from flask_cors import CORS
 import data_manager
 import strategies
-import plots
+import json
+from datetime import datetime, timedelta
+import pandas as pd
 
-# Initialize the Dash App with external assets
-app = dash.Dash(__name__, assets_folder='assets')
+app = Flask(__name__, static_folder='static')
+CORS(app)
 
-# App Layout - TradingView Style
-app.layout = html.Div([
-    # Compact Toolbar
-    html.Div([
-        html.Label("Ticker:", className='toolbar-label'),
-        dcc.Input(
-            id='ticker-input',
-            type='text',
-            value='^NSEI',
-            placeholder='Enter symbol...',
-            className='ticker-input'
-        ),
-        html.Button('Fetch Data', id='submit-button', n_clicks=0, className='fetch-button')
-    ], className='toolbar-container'),
-    
-    # Chart Container
-    html.Div([
-        dcc.Graph(
-            id='live-chart',
-            config={'displayModeBar': False},
-            style={'height': '100%'}
-        )
-    ], className='chart-container'),
-    
-    # Interval Component: Auto-refresh every 5 minutes
-    dcc.Interval(
-        id='interval-component',
-        interval=300*1000, 
-        n_intervals=0
-    )
-], style={'height': '100vh', 'display': 'flex', 'flexDirection': 'column'})
+# Cache for historical data
+data_cache = {}
 
-# Callback: Updates the graph when button is clicked or interval fires
-@app.callback(
-    Output('live-chart', 'figure'),
-    [Input('submit-button', 'n_clicks'),
-     Input('interval-component', 'n_intervals')],
-    [State('ticker-input', 'value')]
-)
-def update_graph_live(n_clicks, n_intervals, ticker):
-    # Use default ticker if empty
-    if not ticker or ticker.strip() == '':
-        ticker = '^NSEI'
-    
-    # 1. Fetch 60 days of daily data
-    df = data_manager.fetch_market_data(ticker=ticker, period="60d", interval="1d")
-    
-    # 2. Process (Strategy)
-    df = strategies.apply_strategies(df)
-    
-    # 3. Plot
-    fig = plots.create_figure(df, ticker=ticker)
-    
-    return fig
+@app.route('/')
+def index():
+    """Serve the main HTML page"""
+    return send_from_directory('static', 'index.html')
+
+@app.route('/style.css')
+def serve_css():
+    """Serve CSS file"""
+    return send_from_directory('static', 'style.css')
+
+@app.route('/app.js')
+def serve_js():
+    """Serve JavaScript file"""
+    return send_from_directory('static', 'app.js')
+
+@app.route('/api/stock-data')
+def get_stock_data():
+    """API endpoint to fetch stock data with caching"""
+    try:
+        ticker = request.args.get('ticker', '^NSEI')
+        
+        # Check if we have cached historical data for this ticker
+        if ticker in data_cache:
+            cached_data = data_cache[ticker]
+            last_update = cached_data['last_update']
+            
+            # If cache is less than 1 hour old, fetch only latest data
+            if datetime.now() - last_update < timedelta(hours=1):
+                # Fetch only today's data (1d period, 1m interval for live updates)
+                live_df = data_manager.fetch_market_data(ticker=ticker, period="1d", interval="1m")
+                
+                if not live_df.empty:
+                    # Merge with historical data
+                    historical_df = cached_data['data']
+                    
+                    # Combine: keep historical + add new live data
+                    combined_df = pd.concat([historical_df, live_df])
+                    combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+                    combined_df = combined_df.sort_index()
+                    
+                    # Keep only last 60 days
+                    cutoff_date = datetime.now() - timedelta(days=60)
+                    combined_df = combined_df[combined_df.index >= cutoff_date]
+                    
+                    # Update cache
+                    data_cache[ticker] = {
+                        'data': combined_df,
+                        'last_update': datetime.now()
+                    }
+                    
+                    df = combined_df
+                else:
+                    # Use cached data if live fetch fails
+                    df = cached_data['data']
+            else:
+                # Cache is old, fetch full historical data
+                df = data_manager.fetch_market_data(ticker=ticker, period="60d", interval="1d")
+                data_cache[ticker] = {
+                    'data': df,
+                    'last_update': datetime.now()
+                }
+        else:
+            # No cache, fetch full historical data
+            df = data_manager.fetch_market_data(ticker=ticker, period="60d", interval="1d")
+            data_cache[ticker] = {
+                'data': df,
+                'last_update': datetime.now()
+            }
+        
+        if df.empty:
+            return jsonify({'error': 'No data available for this ticker'}), 404
+        
+        # Apply strategies
+        df = strategies.apply_strategies(df)
+        
+        # Prepare response data
+        response_data = {
+            'ticker': ticker,
+            'dates': df.index.strftime('%Y-%m-%d %H:%M:%S').tolist(),
+            'open': df['Open'].tolist(),
+            'high': df['High'].tolist(),
+            'low': df['Low'].tolist(),
+            'close': df['Close'].tolist(),
+            'volume': df['Volume'].tolist(),
+            'sma_20': df['SMA_20'].fillna(0).tolist() if 'SMA_20' in df.columns else [],
+            'rsi': df['RSI'].fillna(0).tolist() if 'RSI' in df.columns else []
+        }
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"Error in API: {str(e)}")  # Debug logging
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    print("Starting Dash Server...")
+    print("Starting Flask Server...")
     print("Open your browser and go to http://127.0.0.1:8050/")
     app.run(debug=True, host='0.0.0.0', port=8050)

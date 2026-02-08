@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Market Simulator</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+<body>
+    <!-- Top Toolbar -->
+    <div class="toolbar">
+        <div class="toolbar-left">
+            <span class="ticker-label">Ticker:</span>
+            <input type="text" id="tickerInput" class="ticker-input" value="^NSEI" placeholder="Enter symbol...">
+            <button id="fetchBtn" class="fetch-btn">Fetch Data</button>
+        </div>
+        <div class="toolbar-right">
+            <span class="status-text" id="statusText">Ready</span>
+        </div>
+    </div>
+
+    <!-- Chart Container -->
+    <div class="chart-container">
+        <div id="chart"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
