@@ -110,19 +110,7 @@ body {
     font-size: 12px;
 }
 
-/* Chart Container */
-.chart-container {
-    flex: 1;
-    overflow: hidden;
-    background-color: var(--bg-primary);
-    padding: 0;
-    position: relative;
-}
-
-#chart {
-    width: 100%;
-    height: 100%;
-}
+/* Chart - see main-content layout section below */
 
 /* Plotly Overrides */
 .js-plotly-plot .plotly {
@@ -373,4 +361,299 @@ body {
     30% {
         transform: translateY(-10px);
     }
+}
+
+/* ===== MAIN CONTENT LAYOUT ===== */
+.main-content {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+.chart-container {
+    flex: 1;
+    overflow: hidden;
+    background-color: var(--bg-primary);
+    padding: 0;
+    position: relative;
+}
+
+#chart {
+    width: 100%;
+    height: 100%;
+}
+
+/* ===== RIGHT SIDEBAR ===== */
+.right-sidebar {
+    width: 300px;
+    min-width: 300px;
+    background-color: var(--bg-secondary);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+
+.sidebar-section {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.sidebar-section-title {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+/* Sentiment Score */
+.sentiment-score-section {
+    text-align: center;
+    padding: 20px 16px;
+}
+
+.sentiment-score-container {
+    text-align: center;
+    margin-bottom: 14px;
+}
+
+.sentiment-score-value {
+    font-size: 64px;
+    font-weight: 700;
+    font-family: 'Ubuntu', sans-serif;
+    line-height: 1;
+    color: var(--text-secondary);
+    transition: color 0.5s ease;
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+}
+
+.sentiment-score-value.bullish {
+    color: #26A69A;
+    text-shadow: 0 0 30px rgba(38, 166, 154, 0.4);
+}
+
+.sentiment-score-value.bearish {
+    color: #EF5350;
+    text-shadow: 0 0 30px rgba(239, 83, 80, 0.4);
+}
+
+.sentiment-score-value.neutral {
+    color: #FF9800;
+    text-shadow: 0 0 30px rgba(255, 152, 0, 0.3);
+}
+
+.sentiment-score-label {
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-top: 4px;
+    color: var(--text-secondary);
+    transition: color 0.5s ease;
+}
+
+.sentiment-score-label.bullish {
+    color: #26A69A;
+}
+
+.sentiment-score-label.bearish {
+    color: #EF5350;
+}
+
+.sentiment-score-label.neutral {
+    color: #FF9800;
+}
+
+/* Sentiment Meter */
+.sentiment-meter {
+    width: 100%;
+}
+
+.sentiment-meter-bar {
+    position: relative;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #EF5350 0%, #FF9800 40%, #FF9800 60%, #26A69A 100%);
+    overflow: visible;
+}
+
+.sentiment-meter-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.8s ease;
+}
+
+.sentiment-meter-needle {
+    position: absolute;
+    top: -4px;
+    width: 4px;
+    height: 16px;
+    background: white;
+    border-radius: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    transition: left 0.8s ease;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+}
+
+.sentiment-meter-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+}
+
+.bearish-label {
+    color: #EF5350;
+}
+
+.neutral-label {
+    color: #FF9800;
+}
+
+.bullish-label {
+    color: #26A69A;
+}
+
+/* Live Price */
+.live-price-value {
+    font-size: 22px;
+    font-weight: 700;
+    font-family: 'Ubuntu', sans-serif;
+    color: var(--text-primary);
+}
+
+.live-price-change {
+    font-size: 13px;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+.live-price-change.positive {
+    color: #26A69A;
+}
+
+.live-price-change.negative {
+    color: #EF5350;
+}
+
+/* Score Breakdown */
+.breakdown-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+}
+
+.breakdown-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.breakdown-value {
+    font-size: 14px;
+    font-weight: 700;
+    font-family: 'Ubuntu', sans-serif;
+}
+
+.breakdown-value.positive {
+    color: #26A69A;
+}
+
+.breakdown-value.negative {
+    color: #EF5350;
+}
+
+.breakdown-value.neutral-val {
+    color: #FF9800;
+}
+
+/* News Section */
+.news-section {
+    flex: 1;
+    overflow-y: auto;
+    border-bottom: none;
+}
+
+.news-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.news-item {
+    padding: 8px 10px;
+    background-color: var(--bg-primary);
+    border-radius: 6px;
+    border-left: 3px solid var(--text-secondary);
+    cursor: default;
+    transition: background-color 0.2s;
+}
+
+.news-item:hover {
+    background-color: var(--bg-panel);
+}
+
+.news-item.positive {
+    border-left-color: #26A69A;
+}
+
+.news-item.negative {
+    border-left-color: #EF5350;
+}
+
+.news-item.neutral {
+    border-left-color: #FF9800;
+}
+
+.news-item-title {
+    font-size: 11px;
+    color: var(--text-primary);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.news-item-publisher {
+    font-size: 9px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.news-placeholder {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 12px 0;
+}
+
+/* Loading animation for score */
+@keyframes scorePulse {
+
+    0%,
+    100% {
+        opacity: 0.4;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+.sentiment-score-value.loading {
+    animation: scorePulse 1.5s ease-in-out infinite;
+    color: var(--text-secondary);
 }

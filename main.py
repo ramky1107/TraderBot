@@ -2,6 +2,7 @@ from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 import data_manager
 import strategies
+import sentiment_analyzer
 import json
 from datetime import datetime, timedelta
 import pandas as pd
@@ -24,6 +25,8 @@ else:
 
 # Cache for historical data
 data_cache = {}
+# Cache for sentiment scores (avoid re-computing too often)
+sentiment_cache = {}
 
 @app.route('/')
 def index():
@@ -151,6 +154,71 @@ def chatbot():
     except Exception as e:
         print(f"Chatbot error: {str(e)}")
         return jsonify({'error': f'Failed to get response: {str(e)}'}), 500
+
+@app.route('/api/sentiment-score')
+def get_sentiment_score():
+    """API endpoint to get sentiment score for a ticker"""
+    try:
+        ticker = request.args.get('ticker', '^NSEI')
+        
+        # Check cache (5-minute TTL)
+        if ticker in sentiment_cache:
+            cached = sentiment_cache[ticker]
+            if datetime.now() - cached['last_update'] < timedelta(minutes=5):
+                return jsonify(cached['data'])
+        
+        # Calculate sentiment score
+        result = sentiment_analyzer.get_sentiment_score(ticker)
+        
+        # Cache the result
+        sentiment_cache[ticker] = {
+            'data': result,
+            'last_update': datetime.now()
+        }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Sentiment score error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/live-price')
+def get_live_price():
+    """API endpoint to get live price data (1-minute intervals)"""
+    try:
+        ticker = request.args.get('ticker', '^NSEI')
+        
+        import yfinance as yf
+        live_df = yf.download(ticker, period="1d", interval="1m", progress=False)
+        
+        if live_df.empty:
+            return jsonify({'error': 'No live data available'}), 404
+        
+        # Flatten MultiIndex if present
+        if isinstance(live_df.columns, pd.MultiIndex):
+            live_df.columns = live_df.columns.get_level_values(0)
+        
+        current_price = float(live_df['Close'].iloc[-1])
+        open_price = float(live_df['Open'].iloc[0])
+        high_price = float(live_df['High'].max())
+        low_price = float(live_df['Low'].min())
+        change = current_price - open_price
+        change_pct = (change / open_price) * 100
+        
+        return jsonify({
+            'ticker': ticker,
+            'current_price': round(current_price, 2),
+            'open': round(open_price, 2),
+            'high': round(high_price, 2),
+            'low': round(low_price, 2),
+            'change': round(change, 2),
+            'change_pct': round(change_pct, 2),
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        print(f"Live price error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("Starting Flask Server...")

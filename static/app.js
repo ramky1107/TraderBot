@@ -2,11 +2,17 @@
 
 // Configuration
 const API_URL = '/api/stock-data';
+const SENTIMENT_API_URL = '/api/sentiment-score';
+const LIVE_PRICE_API_URL = '/api/live-price';
 const AUTO_REFRESH_INTERVAL = 300000; // 5 minutes
+const LIVE_PRICE_INTERVAL = 60000;    // 1 minute
+const SENTIMENT_REFRESH_INTERVAL = 300000; // 5 minutes
 
 // State
 let currentTicker = '^NSEI';
 let autoRefreshTimer = null;
+let livePriceTimer = null;
+let sentimentTimer = null;
 
 // DOM Elements
 const tickerInput = document.getElementById('tickerInput');
@@ -23,9 +29,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial load
     fetchStockData(currentTicker);
+    fetchSentimentScore(currentTicker);
+    fetchLivePrice(currentTicker);
 
     // Auto-refresh
     startAutoRefresh();
+    startLivePricePolling();
+    startSentimentRefresh();
 });
 
 // Fetch stock data from API
@@ -58,14 +68,39 @@ async function fetchStockData(ticker) {
     }
 }
 
-// Render Plotly chart
+// Render Plotly chart — RSI on top, Price in middle, Volume at bottom
 function renderChart(data) {
     const { dates, open, high, low, close, volume, sma_20, rsi, ticker } = data;
 
-    // Create traces
     const traces = [];
 
-    // Candlestick with increased width
+    // --- RSI (top panel, y/x axes) ---
+    if (rsi && rsi.length > 0) {
+        const validRsiData = [];
+        const validRsiDates = [];
+        for (let i = 0; i < rsi.length; i++) {
+            const val = rsi[i];
+            if (val !== null && !isNaN(val) && val > 0 && val < 100) {
+                validRsiData.push(val);
+                validRsiDates.push(dates[i]);
+            }
+        }
+        if (validRsiData.length >= 1) {
+            traces.push({
+                type: 'scatter',
+                x: validRsiDates,
+                y: validRsiData,
+                mode: 'lines',
+                name: 'RSI',
+                line: { color: '#9C27B0', width: 2 },
+                xaxis: 'x',
+                yaxis: 'y',
+                connectgaps: false
+            });
+        }
+    }
+
+    // --- Candlestick (middle panel, y2/x2 axes) ---
     traces.push({
         type: 'candlestick',
         x: dates,
@@ -74,18 +109,16 @@ function renderChart(data) {
         low: low,
         close: close,
         name: 'OHLC',
-        xaxis: 'x',
-        yaxis: 'y',
+        xaxis: 'x2',
+        yaxis: 'y2',
         increasing: { line: { color: '#26A69A' } },
         decreasing: { line: { color: '#EF5350' } }
     });
 
-    // 20-Day Moving Average (only plot valid data points, filter out null values)
+    // 20-Day Moving Average (middle panel, same y2/x2)
     if (sma_20 && sma_20.length > 0) {
-        // Filter to get only valid SMA values and their corresponding dates
         const validSmaData = [];
         const validSmaDates = [];
-
         for (let i = 0; i < sma_20.length; i++) {
             const val = sma_20[i];
             if (val !== null && !isNaN(val) && val > 0) {
@@ -93,9 +126,7 @@ function renderChart(data) {
                 validSmaDates.push(dates[i]);
             }
         }
-
-        // Only plot if we have at least 10 valid data points
-        if (validSmaData.length >= 10) {
+        if (validSmaData.length >= 1) {
             traces.push({
                 type: 'scatter',
                 x: validSmaDates,
@@ -103,37 +134,6 @@ function renderChart(data) {
                 mode: 'lines',
                 name: '20-Day MA',
                 line: { color: '#FF9800', width: 2 },
-                xaxis: 'x',
-                yaxis: 'y',
-                connectgaps: false
-            });
-        }
-    }
-
-
-    // RSI (only plot valid data points, filter out null/zero/NaN values)
-    if (rsi && rsi.length > 0) {
-        // Filter to get only valid RSI values and their corresponding dates
-        const validRsiData = [];
-        const validRsiDates = [];
-
-        for (let i = 0; i < rsi.length; i++) {
-            const val = rsi[i];
-            if (val !== 0 && val !== null && !isNaN(val) && val > 0 && val < 100) {
-                validRsiData.push(val);
-                validRsiDates.push(dates[i]);
-            }
-        }
-
-        // Only plot if we have at least 10 valid data points
-        if (validRsiData.length >= 10) {
-            traces.push({
-                type: 'scatter',
-                x: validRsiDates,
-                y: validRsiData,
-                mode: 'lines',
-                name: 'RSI',
-                line: { color: '#9C27B0', width: 2 },
                 xaxis: 'x2',
                 yaxis: 'y2',
                 connectgaps: false
@@ -141,7 +141,7 @@ function renderChart(data) {
         }
     }
 
-    // Volume
+    // --- Volume (bottom panel, y3/x3 axes) ---
     traces.push({
         type: 'bar',
         x: dates,
@@ -152,7 +152,7 @@ function renderChart(data) {
         yaxis: 'y3'
     });
 
-    // Layout
+    // Layout: RSI top, Price middle, Volume bottom
     const layout = {
         title: {
             text: `${ticker} - Last: ${close[close.length - 1]?.toFixed(2) || 'N/A'}`,
@@ -166,6 +166,7 @@ function renderChart(data) {
             pattern: 'independent',
             roworder: 'top to bottom'
         },
+        // RSI (top)
         xaxis: {
             domain: [0, 1],
             anchor: 'y',
@@ -174,10 +175,12 @@ function renderChart(data) {
             rangebreaks: [{ bounds: ['sat', 'mon'] }]
         },
         yaxis: {
-            domain: [0.5, 1],
-            title: 'Price',
-            titlefont: { size: 12 }
+            domain: [0.82, 1],
+            title: 'RSI',
+            titlefont: { size: 12 },
+            range: [0, 100]
         },
+        // Price (middle)
         xaxis2: {
             domain: [0, 1],
             anchor: 'y2',
@@ -186,11 +189,11 @@ function renderChart(data) {
             rangebreaks: [{ bounds: ['sat', 'mon'] }]
         },
         yaxis2: {
-            domain: [0.25, 0.47],
-            title: 'RSI',
-            titlefont: { size: 12 },
-            range: [0, 100]
+            domain: [0.25, 0.79],
+            title: 'Price',
+            titlefont: { size: 12 }
         },
+        // Volume (bottom)
         xaxis3: {
             domain: [0, 1],
             anchor: 'y3',
@@ -220,27 +223,23 @@ function renderChart(data) {
         xaxis_rangeslider_visible: false
     };
 
-    // Add RSI reference lines
+    // RSI reference lines (on y axis, which is now the top panel)
     const shapes = [
         {
             type: 'line',
             xref: 'paper',
-            yref: 'y2',
-            x0: 0,
-            x1: 1,
-            y0: 70,
-            y1: 70,
+            yref: 'y',
+            x0: 0, x1: 1,
+            y0: 70, y1: 70,
             line: { color: '#EF5350', width: 1, dash: 'dash' },
             opacity: 0.5
         },
         {
             type: 'line',
             xref: 'paper',
-            yref: 'y2',
-            x0: 0,
-            x1: 1,
-            y0: 30,
-            y1: 30,
+            yref: 'y',
+            x0: 0, x1: 1,
+            y0: 30, y1: 30,
             line: { color: '#26A69A', width: 1, dash: 'dash' },
             opacity: 0.5
         }
@@ -248,7 +247,6 @@ function renderChart(data) {
 
     layout.shapes = shapes;
 
-    // Config
     const config = {
         displayModeBar: false,
         responsive: true
@@ -263,7 +261,12 @@ function handleFetchClick() {
     const ticker = tickerInput.value.trim();
     if (ticker) {
         fetchStockData(ticker);
+        fetchSentimentScore(ticker);
+        fetchLivePrice(ticker);
+        currentTicker = ticker;
         restartAutoRefresh();
+        restartLivePricePolling();
+        restartSentimentRefresh();
     }
 }
 
@@ -286,12 +289,168 @@ function restartAutoRefresh() {
     startAutoRefresh();
 }
 
-// Cleanup on page unload
-window.addEventListener('beforeunload', () => {
-    if (autoRefreshTimer) {
-        clearInterval(autoRefreshTimer);
+// ===== SENTIMENT SCORE FUNCTIONS =====
+
+// Fetch sentiment score from API
+async function fetchSentimentScore(ticker) {
+    const scoreEl = document.getElementById('sentimentScoreValue');
+    const labelEl = document.getElementById('sentimentLabel');
+
+    try {
+        // Show loading state
+        scoreEl.className = 'sentiment-score-value loading';
+        scoreEl.textContent = '...';
+        labelEl.textContent = 'Analyzing...';
+
+        const response = await fetch(`${SENTIMENT_API_URL}?ticker=${encodeURIComponent(ticker)}`);
+        const data = await response.json();
+
+        if (data.error) {
+            scoreEl.className = 'sentiment-score-value';
+            scoreEl.textContent = '--';
+            labelEl.textContent = 'Error';
+            return;
+        }
+
+        // Update main score
+        updateSentimentDisplay(data);
+
+    } catch (error) {
+        console.error('Sentiment fetch error:', error);
+        scoreEl.className = 'sentiment-score-value';
+        scoreEl.textContent = '--';
+        labelEl.textContent = 'Unavailable';
     }
-});
+}
+
+// Update all sentiment UI elements
+function updateSentimentDisplay(data) {
+    const score = data.score;
+    const label = data.label;
+
+    // Determine color class
+    let colorClass = 'neutral';
+    if (score > 10) colorClass = 'bullish';
+    else if (score < -10) colorClass = 'bearish';
+
+    // Update score value (big font)
+    const scoreEl = document.getElementById('sentimentScoreValue');
+    scoreEl.textContent = (score > 0 ? '+' : '') + score;
+    scoreEl.className = `sentiment-score-value ${colorClass}`;
+
+    // Update label
+    const labelEl = document.getElementById('sentimentLabel');
+    labelEl.textContent = label;
+    labelEl.className = `sentiment-score-label ${colorClass}`;
+
+    // Update meter needle position (map -100..+100 to 0%..100%)
+    const needlePos = ((score + 100) / 200) * 100;
+    const needleEl = document.getElementById('sentimentNeedle');
+    needleEl.style.left = `${needlePos}%`;
+
+    // Update breakdown scores
+    updateBreakdownScore('techScore', data.technical?.score);
+    updateBreakdownScore('newsScore', data.news?.score);
+    updateBreakdownScore('liveScore', data.live?.score);
+
+    // Update news headlines
+    renderNewsHeadlines(data.news?.headlines || []);
+}
+
+// Render news headlines in sidebar
+function renderNewsHeadlines(headlines) {
+    const newsList = document.getElementById('newsList');
+    if (!newsList) return;
+
+    if (!headlines || headlines.length === 0) {
+        newsList.innerHTML = '<div class="news-placeholder">No recent news</div>';
+        return;
+    }
+
+    newsList.innerHTML = headlines.map(item => {
+        const sentimentClass = item.sentiment || 'neutral';
+        const publisher = item.publisher ? `<div class="news-item-publisher">${item.publisher}</div>` : '';
+        return `
+            <div class="news-item ${sentimentClass}">
+                <div class="news-item-title">${item.title || 'Untitled'}</div>
+                ${publisher}
+            </div>
+        `;
+    }).join('');
+}
+
+// Update individual breakdown score element
+function updateBreakdownScore(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+
+    if (value === undefined || value === null) {
+        el.textContent = '--';
+        el.className = 'breakdown-value';
+        return;
+    }
+
+    el.textContent = (value > 0 ? '+' : '') + value;
+    if (value > 0) {
+        el.className = 'breakdown-value positive';
+    } else if (value < 0) {
+        el.className = 'breakdown-value negative';
+    } else {
+        el.className = 'breakdown-value neutral-val';
+    }
+}
+
+// Fetch live price
+async function fetchLivePrice(ticker) {
+    try {
+        const response = await fetch(`${LIVE_PRICE_API_URL}?ticker=${encodeURIComponent(ticker)}`);
+        const data = await response.json();
+
+        if (data.error) return;
+
+        // Update live price display
+        const priceEl = document.getElementById('livePriceValue');
+        const changeEl = document.getElementById('livePriceChange');
+
+        priceEl.textContent = data.current_price?.toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }) || '--';
+
+        if (data.change !== undefined) {
+            const sign = data.change >= 0 ? '+' : '';
+            changeEl.textContent = `${sign}${data.change.toFixed(2)} (${sign}${data.change_pct.toFixed(2)}%)`;
+            changeEl.className = `live-price-change ${data.change >= 0 ? 'positive' : 'negative'}`;
+        }
+
+    } catch (error) {
+        console.error('Live price fetch error:', error);
+    }
+}
+
+// Live price polling
+function startLivePricePolling() {
+    livePriceTimer = setInterval(() => {
+        fetchLivePrice(currentTicker);
+    }, LIVE_PRICE_INTERVAL);
+}
+
+function restartLivePricePolling() {
+    if (livePriceTimer) clearInterval(livePriceTimer);
+    startLivePricePolling();
+}
+
+// Sentiment refresh
+function startSentimentRefresh() {
+    sentimentTimer = setInterval(() => {
+        fetchSentimentScore(currentTicker);
+    }, SENTIMENT_REFRESH_INTERVAL);
+}
+
+function restartSentimentRefresh() {
+    if (sentimentTimer) clearInterval(sentimentTimer);
+    startSentimentRefresh();
+}
 
 // ===== CHATBOT FUNCTIONALITY =====
 

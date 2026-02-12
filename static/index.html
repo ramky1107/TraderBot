@@ -22,9 +22,66 @@
         </div>
     </div>
 
-    <!-- Chart Container -->
-    <div class="chart-container">
-        <div id="chart"></div>
+    <!-- Main Content Area: Chart Left + Sidebar Right -->
+    <div class="main-content">
+        <!-- Chart Container (Left) -->
+        <div class="chart-container">
+            <div id="chart"></div>
+        </div>
+
+        <!-- Right Sidebar: Sentiment + News -->
+        <div class="right-sidebar" id="sentimentPanel">
+            <!-- Sentiment Score -->
+            <div class="sidebar-section sentiment-score-section">
+                <div class="sentiment-score-container">
+                    <div class="sentiment-score-value" id="sentimentScoreValue">--</div>
+                    <div class="sentiment-score-label" id="sentimentLabel">Loading...</div>
+                </div>
+                <div class="sentiment-meter">
+                    <div class="sentiment-meter-bar">
+                        <div class="sentiment-meter-fill" id="sentimentMeterFill"></div>
+                        <div class="sentiment-meter-needle" id="sentimentNeedle"></div>
+                    </div>
+                    <div class="sentiment-meter-labels">
+                        <span class="bearish-label">-100</span>
+                        <span class="neutral-label">0</span>
+                        <span class="bullish-label">+100</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Price -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">LIVE PRICE</div>
+                <div class="live-price-value" id="livePriceValue">--</div>
+                <div class="live-price-change" id="livePriceChange">--</div>
+            </div>
+
+            <!-- Score Breakdown -->
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">SCORE BREAKDOWN</div>
+                <div class="breakdown-item">
+                    <span class="breakdown-label">Technical (5Y)</span>
+                    <span class="breakdown-value" id="techScore">--</span>
+                </div>
+                <div class="breakdown-item">
+                    <span class="breakdown-label">News</span>
+                    <span class="breakdown-value" id="newsScore">--</span>
+                </div>
+                <div class="breakdown-item">
+                    <span class="breakdown-label">Live Price</span>
+                    <span class="breakdown-value" id="liveScore">--</span>
+                </div>
+            </div>
+
+            <!-- News Headlines -->
+            <div class="sidebar-section news-section">
+                <div class="sidebar-section-title">LATEST NEWS</div>
+                <div class="news-list" id="newsList">
+                    <div class="news-placeholder">Loading news...</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Chatbot Widget -->
