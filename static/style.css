@@ -657,3 +657,36 @@ body {
     animation: scorePulse 1.5s ease-in-out infinite;
     color: var(--text-secondary);
 }
+
+/* Financial Ratios */
+.ratio-value {
+    font-size: 13px;
+    font-weight: 600;
+    font-family: 'Ubuntu', sans-serif;
+    color: var(--text-primary);
+}
+
+/* Pulse Badge */
+.pulse-badge {
+    font-size: 8px;
+    background: linear-gradient(135deg, #387ed1, #2962FF);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    text-transform: none;
+    letter-spacing: 0.3px;
+    font-weight: 500;
+    vertical-align: middle;
+}
+
+/* News item link styling */
+.news-item a {
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.news-item a:hover {
+    color: var(--accent);
+}

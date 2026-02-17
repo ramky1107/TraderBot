@@ -4,6 +4,8 @@
 const API_URL = '/api/stock-data';
 const SENTIMENT_API_URL = '/api/sentiment-score';
 const LIVE_PRICE_API_URL = '/api/live-price';
+const FINANCIAL_RATIOS_URL = '/api/financial-ratios';
+const PULSE_NEWS_URL = '/api/pulse-news';
 const AUTO_REFRESH_INTERVAL = 300000; // 5 minutes
 const LIVE_PRICE_INTERVAL = 60000;    // 1 minute
 const SENTIMENT_REFRESH_INTERVAL = 300000; // 5 minutes
@@ -31,6 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchStockData(currentTicker);
     fetchSentimentScore(currentTicker);
     fetchLivePrice(currentTicker);
+    fetchFinancialRatios(currentTicker);
+    fetchPulseNews();
 
     // Auto-refresh
     startAutoRefresh();
@@ -68,39 +72,13 @@ async function fetchStockData(ticker) {
     }
 }
 
-// Render Plotly chart — RSI on top, Price in middle, Volume at bottom
+// Render Plotly chart — Top: Candles + SMA + Volume overlay | Bottom: RSI
 function renderChart(data) {
     const { dates, open, high, low, close, volume, sma_20, rsi, ticker } = data;
 
     const traces = [];
 
-    // --- RSI (top panel, y/x axes) ---
-    if (rsi && rsi.length > 0) {
-        const validRsiData = [];
-        const validRsiDates = [];
-        for (let i = 0; i < rsi.length; i++) {
-            const val = rsi[i];
-            if (val !== null && !isNaN(val) && val > 0 && val < 100) {
-                validRsiData.push(val);
-                validRsiDates.push(dates[i]);
-            }
-        }
-        if (validRsiData.length >= 1) {
-            traces.push({
-                type: 'scatter',
-                x: validRsiDates,
-                y: validRsiData,
-                mode: 'lines',
-                name: 'RSI',
-                line: { color: '#9C27B0', width: 2 },
-                xaxis: 'x',
-                yaxis: 'y',
-                connectgaps: false
-            });
-        }
-    }
-
-    // --- Candlestick (middle panel, y2/x2 axes) ---
+    // --- Candlestick (top panel, price y-axis on right) ---
     traces.push({
         type: 'candlestick',
         x: dates,
@@ -109,13 +87,13 @@ function renderChart(data) {
         low: low,
         close: close,
         name: 'OHLC',
-        xaxis: 'x2',
-        yaxis: 'y2',
+        xaxis: 'x',
+        yaxis: 'y',
         increasing: { line: { color: '#26A69A' } },
         decreasing: { line: { color: '#EF5350' } }
     });
 
-    // 20-Day Moving Average (middle panel, same y2/x2)
+    // 20-Day Moving Average (top panel, same price y-axis)
     if (sma_20 && sma_20.length > 0) {
         const validSmaData = [];
         const validSmaDates = [];
@@ -134,6 +112,47 @@ function renderChart(data) {
                 mode: 'lines',
                 name: '20-Day MA',
                 line: { color: '#FF9800', width: 2 },
+                xaxis: 'x',
+                yaxis: 'y',
+                connectgaps: false
+            });
+        }
+    }
+
+    // --- Volume (top panel, overlaid, bars capped at 25% of panel height) ---
+    const volColors = close.map((c, i) => c >= open[i] ? 'rgba(38,166,154,0.4)' : 'rgba(239,83,80,0.4)');
+    const maxVol = Math.max(...volume);
+    traces.push({
+        type: 'bar',
+        x: dates,
+        y: volume,
+        name: 'Volume',
+        marker: { color: volColors },
+        xaxis: 'x',
+        yaxis: 'y3',
+        opacity: 0.5,
+        showlegend: true
+    });
+
+    // --- RSI (bottom panel, separate y2/x2 axes) ---
+    if (rsi && rsi.length > 0) {
+        const validRsiData = [];
+        const validRsiDates = [];
+        for (let i = 0; i < rsi.length; i++) {
+            const val = rsi[i];
+            if (val !== null && !isNaN(val) && val > 0 && val < 100) {
+                validRsiData.push(val);
+                validRsiDates.push(dates[i]);
+            }
+        }
+        if (validRsiData.length >= 1) {
+            traces.push({
+                type: 'scatter',
+                x: validRsiDates,
+                y: validRsiData,
+                mode: 'lines',
+                name: 'RSI',
+                line: { color: '#9C27B0', width: 2 },
                 xaxis: 'x2',
                 yaxis: 'y2',
                 connectgaps: false
@@ -141,18 +160,7 @@ function renderChart(data) {
         }
     }
 
-    // --- Volume (bottom panel, y3/x3 axes) ---
-    traces.push({
-        type: 'bar',
-        x: dates,
-        y: volume,
-        name: 'Volume',
-        marker: { color: '#4FC3F7' },
-        xaxis: 'x3',
-        yaxis: 'y3'
-    });
-
-    // Layout: RSI top, Price middle, Volume bottom
+    // Layout: Top panel (candles+volume) 75%, Bottom panel (RSI) 25%
     const layout = {
         title: {
             text: `${ticker} - Last: ${close[close.length - 1]?.toFixed(2) || 'N/A'}`,
@@ -160,51 +168,53 @@ function renderChart(data) {
             x: 0.01,
             xanchor: 'left'
         },
-        grid: {
-            rows: 3,
-            columns: 1,
-            pattern: 'independent',
-            roworder: 'top to bottom'
+        // --- Top panel: Price y-axis (right side) ---
+        yaxis: {
+            domain: [0.28, 1],
+            title: 'Price',
+            titlefont: { size: 12 },
+            side: 'right',
+            showgrid: true,
+            gridcolor: '#2A2E39'
         },
-        // RSI (top)
+        // --- Top panel: Volume y-axis (overlaid, hidden labels, 25% max) ---
+        yaxis3: {
+            domain: [0.28, 1],
+            side: 'left',
+            overlaying: 'y',
+            range: [0, maxVol * 4],
+            showgrid: false,
+            showticklabels: false
+        },
+        // --- Top panel: X-axis (hidden tick labels, shared range) ---
         xaxis: {
             domain: [0, 1],
             anchor: 'y',
             showgrid: true,
             gridcolor: '#2A2E39',
-            rangebreaks: [{ bounds: ['sat', 'mon'] }]
+            rangebreaks: [{ bounds: ['sat', 'mon'] }],
+            showticklabels: false
         },
-        yaxis: {
-            domain: [0.82, 1],
+        // --- Bottom panel: RSI y-axis ---
+        yaxis2: {
+            domain: [0, 0.23],
             title: 'RSI',
-            titlefont: { size: 12 },
-            range: [0, 100]
+            titlefont: { size: 11, color: '#9C27B0' },
+            side: 'right',
+            range: [0, 100],
+            showgrid: true,
+            gridcolor: '#2A2E39',
+            tickvals: [30, 50, 70],
+            tickfont: { size: 10 }
         },
-        // Price (middle)
+        // --- Bottom panel: RSI x-axis (with date labels) ---
         xaxis2: {
             domain: [0, 1],
             anchor: 'y2',
             showgrid: true,
             gridcolor: '#2A2E39',
-            rangebreaks: [{ bounds: ['sat', 'mon'] }]
-        },
-        yaxis2: {
-            domain: [0.25, 0.79],
-            title: 'Price',
-            titlefont: { size: 12 }
-        },
-        // Volume (bottom)
-        xaxis3: {
-            domain: [0, 1],
-            anchor: 'y3',
-            showgrid: true,
-            gridcolor: '#2A2E39',
-            rangebreaks: [{ bounds: ['sat', 'mon'] }]
-        },
-        yaxis3: {
-            domain: [0, 0.22],
-            title: 'Volume',
-            titlefont: { size: 12 }
+            rangebreaks: [{ bounds: ['sat', 'mon'] }],
+            matches: 'x'
         },
         paper_bgcolor: '#131722',
         plot_bgcolor: '#131722',
@@ -218,41 +228,33 @@ function renderChart(data) {
             x: 1,
             font: { size: 11 }
         },
-        margin: { l: 60, r: 20, t: 50, b: 40 },
+        margin: { l: 10, r: 60, t: 50, b: 40 },
         hovermode: 'x unified',
-        xaxis_rangeslider_visible: false
+        xaxis_rangeslider_visible: false,
+        bargap: 0.1
     };
 
-    // RSI reference lines (on y axis, which is now the top panel)
-    const shapes = [
+    // RSI reference lines (bottom panel only)
+    layout.shapes = [
         {
-            type: 'line',
-            xref: 'paper',
-            yref: 'y',
-            x0: 0, x1: 1,
-            y0: 70, y1: 70,
+            type: 'line', xref: 'paper', yref: 'y2',
+            x0: 0, x1: 1, y0: 70, y1: 70,
             line: { color: '#EF5350', width: 1, dash: 'dash' },
             opacity: 0.5
         },
         {
-            type: 'line',
-            xref: 'paper',
-            yref: 'y',
-            x0: 0, x1: 1,
-            y0: 30, y1: 30,
+            type: 'line', xref: 'paper', yref: 'y2',
+            x0: 0, x1: 1, y0: 30, y1: 30,
             line: { color: '#26A69A', width: 1, dash: 'dash' },
             opacity: 0.5
         }
     ];
-
-    layout.shapes = shapes;
 
     const config = {
         displayModeBar: false,
         responsive: true
     };
 
-    // Render
     Plotly.newPlot(chartDiv, traces, layout, config);
 }
 
@@ -263,6 +265,8 @@ function handleFetchClick() {
         fetchStockData(ticker);
         fetchSentimentScore(ticker);
         fetchLivePrice(ticker);
+        fetchFinancialRatios(ticker);
+        fetchPulseNews();
         currentTicker = ticker;
         restartAutoRefresh();
         restartLivePricePolling();
@@ -352,13 +356,10 @@ function updateSentimentDisplay(data) {
     updateBreakdownScore('techScore', data.technical?.score);
     updateBreakdownScore('newsScore', data.news?.score);
     updateBreakdownScore('liveScore', data.live?.score);
-
-    // Update news headlines
-    renderNewsHeadlines(data.news?.headlines || []);
 }
 
-// Render news headlines in sidebar
-function renderNewsHeadlines(headlines) {
+// Render Zerodha Pulse news headlines in sidebar
+function renderPulseNews(headlines) {
     const newsList = document.getElementById('newsList');
     if (!newsList) return;
 
@@ -368,15 +369,64 @@ function renderNewsHeadlines(headlines) {
     }
 
     newsList.innerHTML = headlines.map(item => {
-        const sentimentClass = item.sentiment || 'neutral';
         const publisher = item.publisher ? `<div class="news-item-publisher">${item.publisher}</div>` : '';
+        const url = item.url || '#';
         return `
-            <div class="news-item ${sentimentClass}">
-                <div class="news-item-title">${item.title || 'Untitled'}</div>
+            <div class="news-item">
+                <a href="${url}" target="_blank" rel="noopener">
+                    <div class="news-item-title">${item.title || 'Untitled'}</div>
+                </a>
                 ${publisher}
             </div>
         `;
     }).join('');
+}
+
+// Fetch financial ratios from API
+async function fetchFinancialRatios(ticker) {
+    try {
+        const response = await fetch(`${FINANCIAL_RATIOS_URL}?ticker=${encodeURIComponent(ticker)}`);
+        const data = await response.json();
+
+        if (data.error) return;
+
+        const r = data.ratios || {};
+        const setRatio = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = val || '--';
+        };
+
+        setRatio('peRatio', r.pe_ratio);
+        setRatio('pbRatio', r.pb_ratio);
+        setRatio('debtEquity', r.debt_equity);
+        setRatio('marketCap', r.market_cap);
+        setRatio('dividendYield', r.dividend_yield);
+        setRatio('roeValue', r.roe);
+        setRatio('epsValue', r.eps);
+        setRatio('bookValue', r.book_value);
+
+    } catch (error) {
+        console.error('Financial ratios fetch error:', error);
+    }
+}
+
+// Fetch news from Zerodha Pulse
+async function fetchPulseNews() {
+    try {
+        const response = await fetch(PULSE_NEWS_URL);
+        const data = await response.json();
+
+        if (data.error) {
+            renderPulseNews([]);
+            return;
+        }
+
+        renderPulseNews(data.headlines || []);
+
+    } catch (error) {
+        console.error('Pulse news fetch error:', error);
+        renderPulseNews([]);
+    }
 }
 
 // Update individual breakdown score element

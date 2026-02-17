@@ -1,8 +1,11 @@
 yfinance==1.1.0
 mplfinance
 pandas
+numpy
 matplotlib
 plotly
 flask
 flask-cors
 google-generativeai
+beautifulsoup4
+requests
