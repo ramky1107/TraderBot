@@ -1,0 +1,44 @@
+/* =============================================================================
+   layout.css — Main content area, chart container, sidebar shell
+   ============================================================================= */
+
+/* ─── App Shell ──────────────────────────────────────────────────────────────── */
+#app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ─── Main Content ───────────────────────────────────────────────────────────── */
+.main-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    /* subtract toolbar + indicator bar + signal bar */
+    height: calc(100vh - var(--toolbar-h) - var(--indicator-h) - var(--signal-bar-h));
+}
+
+/* ─── Chart Container ────────────────────────────────────────────────────────── */
+.chart-container {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-primary);
+    overflow: hidden;
+}
+
+#chart {
+    width: 100%;
+    height: 100%;
+}
+
+/* ─── Right Sidebar ──────────────────────────────────────────────────────────── */
+.right-sidebar {
+    width: var(--sidebar-w);
+    flex-shrink: 0;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}

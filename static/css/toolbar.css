@@ -1,0 +1,133 @@
+/* =============================================================================
+   toolbar.css — Toolbar (row 1) + Indicator Toggle Bar (row 2)
+   ============================================================================= */
+
+/* ─── Toolbar ────────────────────────────────────────────────────────────────── */
+.toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--toolbar-h);
+    padding: 0 12px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.toolbar-left,
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.toolbar-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.ticker-input {
+    width: 90px;
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 500;
+    text-transform: uppercase;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.ticker-input:focus {
+    border-color: var(--accent);
+}
+
+.toolbar-select {
+    padding: 4px 6px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-family: var(--font);
+    font-size: 12px;
+    outline: none;
+    cursor: pointer;
+}
+
+.toolbar-select:focus {
+    border-color: var(--accent);
+}
+
+.status-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ─── Indicator Toggle Bar ───────────────────────────────────────────────────── */
+.indicator-bar {
+    display: flex;
+    align-items: center;
+    height: var(--indicator-h);
+    padding: 0 12px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-subtle);
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.indicator-bar-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-right: 4px;
+}
+
+.ind-toggle {
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.ind-toggle:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+.ind-toggle.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.indicator-bar-divider {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 4px;
+}
+
+.indicator-bar-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+}

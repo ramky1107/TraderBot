@@ -1,0 +1,248 @@
+/* =============================================================================
+   sidebar.css — Sidebar sections: score, live price, breakdown, ratios, news
+   ============================================================================= */
+
+/* ─── Section Shell ──────────────────────────────────────────────────────────── */
+.sidebar-section {
+    padding: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar-section-title {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+
+/* ─── Sentiment Score ────────────────────────────────────────────────────────── */
+.sentiment-score-section {
+    padding: 14px 12px;
+}
+
+.sentiment-score-container {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.sentiment-score-value {
+    font-size: 32px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.sentiment-score-value.positive {
+    color: var(--bullish);
+}
+
+.sentiment-score-value.negative {
+    color: var(--bearish);
+}
+
+.sentiment-score-value.neutral {
+    color: var(--text-secondary);
+}
+
+.sentiment-score-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+/* ─── Confidence Badge ───────────────────────────────────────────────────────── */
+.confidence-badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    border: 1px solid currentColor;
+}
+
+.confidence-badge.high {
+    color: var(--bullish);
+}
+
+.confidence-badge.medium {
+    color: var(--warning);
+}
+
+.confidence-badge.low {
+    color: var(--bearish);
+}
+
+/* ─── Sentiment Meter ────────────────────────────────────────────────────────── */
+.sentiment-meter {
+    margin-top: 6px;
+}
+
+.sentiment-meter-bar {
+    position: relative;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to right, var(--bearish), #555, var(--bullish));
+}
+
+.sentiment-meter-needle {
+    position: absolute;
+    top: -3px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #fff;
+    transform: translateX(-50%);
+    transition: left 0.4s ease;
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.4);
+}
+
+.sentiment-meter-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 9px;
+    color: var(--text-muted);
+}
+
+.bearish-label {
+    color: var(--bearish);
+}
+
+.bullish-label {
+    color: var(--bullish);
+}
+
+/* ─── Live Price ─────────────────────────────────────────────────────────────── */
+.live-price-value {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.live-price-change {
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.live-price-change.positive {
+    color: var(--bullish);
+}
+
+.live-price-change.negative {
+    color: var(--bearish);
+}
+
+/* ─── Breakdown / Ratios ─────────────────────────────────────────────────────── */
+.breakdown-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.breakdown-item:last-child {
+    border-bottom: none;
+}
+
+.breakdown-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.breakdown-value,
+.ratio-value {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+/* ─── News ───────────────────────────────────────────────────────────────────── */
+.news-section {
+    flex: 1;
+}
+
+.pulse-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    background: #1a1a2e;
+    border: 1px solid #2a2a4e;
+    border-radius: 3px;
+    font-size: 8px;
+    color: #7986cb;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
+.news-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.news-placeholder {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 8px 0;
+}
+
+.news-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.news-item:last-child {
+    border-bottom: none;
+}
+
+.news-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+
+.news-dot.positive {
+    background: var(--bullish);
+}
+
+.news-dot.negative {
+    background: var(--bearish);
+}
+
+.news-dot.neutral {
+    background: var(--neutral);
+}
+
+.news-item-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.news-item-title {
+    font-size: 11px;
+    color: var(--text-primary);
+    text-decoration: none;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.news-item-title:hover {
+    color: var(--accent);
+}
+
+.news-item-publisher {
+    font-size: 9px;
+    color: var(--text-muted);
+}

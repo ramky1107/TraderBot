@@ -1,0 +1,23 @@
+<!-- partials/chatbot.html — Floating chatbot widget -->
+
+<!-- Toggle button (always visible) -->
+<button id="chatbotToggle" class="chatbot-toggle" title="Open AI Assistant">💬</button>
+
+<!-- Chat panel (hidden until toggled) -->
+<div id="chatbotContainer" class="chatbot-container">
+    <div class="chatbot-header">
+        <span class="chatbot-title">AI Stock Assistant</span>
+        <button id="chatbotClose" class="chatbot-close" title="Close">✕</button>
+    </div>
+
+    <div id="chatbotMessages" class="chatbot-messages">
+        <div class="chatbot-message bot-message">
+            Hi! Ask me anything about stocks, indicators, or trading strategies.
+        </div>
+    </div>
+
+    <div class="chatbot-input-container">
+        <input id="chatbotInput" class="chatbot-input" type="text" placeholder="Ask about stocks…" autocomplete="off" />
+        <button id="chatbotSend" class="chatbot-send">Send</button>
+    </div>
+</div>

@@ -1,0 +1,37 @@
+<!-- partials/toolbar.html — Ticker input, period/interval selects, action buttons, status -->
+<div class="toolbar">
+    <div class="toolbar-left">
+        <span class="toolbar-label">Ticker</span>
+        <input id="tickerInput" class="ticker-input" type="text" value="^NSEI" placeholder="e.g. RELIANCE.NS"
+            autocomplete="off" spellcheck="false" />
+
+        <span class="toolbar-label">Period</span>
+        <select id="periodSelect" class="toolbar-select">
+            <option value="1d">1D</option>
+            <option value="5d" selected>5D</option>
+            <option value="1mo">1M</option>
+            <option value="3mo">3M</option>
+            <option value="6mo">6M</option>
+            <option value="1y">1Y</option>
+            <option value="2y">2Y</option>
+            <option value="5y">5Y</option>
+        </select>
+
+        <span class="toolbar-label">Interval</span>
+        <select id="intervalSelect" class="toolbar-select">
+            <option value="1m">1m</option>
+            <option value="5m">5m</option>
+            <option value="15m">15m</option>
+            <option value="1h">1h</option>
+            <option value="1d" selected>1D</option>
+            <option value="1wk">1W</option>
+        </select>
+
+        <button id="fetchBtn" class="btn btn-primary">Update Chart</button>
+    </div>
+
+    <div class="toolbar-right">
+        <button id="generateScoreBtn" class="btn btn-accent">Generate Score</button>
+        <span id="statusText" class="status-text">Ready</span>
+    </div>
+</div>

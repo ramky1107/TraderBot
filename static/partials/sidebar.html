@@ -1,0 +1,102 @@
+<!-- partials/sidebar.html — Right sidebar: score, live price, breakdown, ratios, news -->
+<aside class="right-sidebar">
+
+    <!-- ── Sentiment Score ──────────────────────────────────────────────────── -->
+    <div class="sidebar-section sentiment-score-section">
+        <div class="sidebar-section-title">Sentiment Score</div>
+
+        <div class="sentiment-score-container">
+            <span id="sentimentScoreValue" class="sentiment-score-value neutral">--</span>
+            <span id="confidenceBadge" class="confidence-badge low">
+                <span id="confidenceValue">0%</span> confidence
+            </span>
+        </div>
+
+        <div id="sentimentLabel" class="sentiment-score-label">Neutral</div>
+
+        <div class="sentiment-meter">
+            <div class="sentiment-meter-bar">
+                <div id="sentimentNeedle" class="sentiment-meter-needle" style="left:50%"></div>
+            </div>
+            <div class="sentiment-meter-labels">
+                <span class="bearish-label">Bearish</span>
+                <span class="bullish-label">Bullish</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Live Price ────────────────────────────────────────────────────────── -->
+    <div class="sidebar-section">
+        <div class="sidebar-section-title">Live Price</div>
+        <div id="livePriceValue" class="live-price-value">--</div>
+        <div id="livePriceChange" class="live-price-change">--</div>
+    </div>
+
+    <!-- ── Score Breakdown ───────────────────────────────────────────────────── -->
+    <div class="sidebar-section">
+        <div class="sidebar-section-title">Score Breakdown</div>
+
+        <div class="breakdown-item">
+            <span class="breakdown-label">Technical</span>
+            <span id="techScore" class="breakdown-value">--</span>
+        </div>
+        <div class="breakdown-item">
+            <span class="breakdown-label">News</span>
+            <span id="newsScore" class="breakdown-value">--</span>
+        </div>
+        <div class="breakdown-item">
+            <span class="breakdown-label">Live Price</span>
+            <span id="liveScore" class="breakdown-value">--</span>
+        </div>
+    </div>
+
+    <!-- ── Financial Ratios ──────────────────────────────────────────────────── -->
+    <div class="sidebar-section">
+        <div class="sidebar-section-title">Financial Ratios</div>
+
+        <div class="breakdown-item">
+            <span class="breakdown-label">P/E Ratio</span>
+            <span id="peRatio" class="ratio-value">--</span>
+        </div>
+        <div class="breakdown-item">
+            <span class="breakdown-label">P/B Ratio</span>
+            <span id="pbRatio" class="ratio-value">--</span>
+        </div>
+        <div class="breakdown-item">
+            <span class="breakdown-label">Debt/Equity</span>
+            <span id="debtEquity" class="ratio-value">--</span>
+        </div>
+        <div class="breakdown-item">
+            <span class="breakdown-label">Market Cap</span>
+            <span id="marketCap" class="ratio-value">--</span>
+        </div>
+        <div class="breakdown-item">
+            <span class="breakdown-label">Dividend Yield</span>
+            <span id="dividendYield" class="ratio-value">--</span>
+        </div>
+        <div class="breakdown-item">
+            <span class="breakdown-label">ROE</span>
+            <span id="roeValue" class="ratio-value">--</span>
+        </div>
+        <div class="breakdown-item">
+            <span class="breakdown-label">EPS</span>
+            <span id="epsValue" class="ratio-value">--</span>
+        </div>
+        <div class="breakdown-item">
+            <span class="breakdown-label">Book Value</span>
+            <span id="bookValue" class="ratio-value">--</span>
+        </div>
+    </div>
+
+    <!-- ── News ─────────────────────────────────────────────────────────────── -->
+    <div class="sidebar-section news-section">
+        <div class="sidebar-section-title">
+            News
+            <span class="pulse-badge">PULSE</span>
+        </div>
+        <div id="newsList" class="news-list">
+            <div class="news-placeholder">Click "Generate Score" to load news.</div>
+        </div>
+    </div>
+
+</aside>

@@ -1,618 +1,812 @@
-// Stock Market Simulator - Frontend JavaScript
+/**
+ * =============================================================================
+ * app.js — Stock Market Simulator Frontend
+ * =============================================================================
+ *
+ * Naming conventions:
+ *   on*     → DOM event handlers (e.g. onFetchButtonClick)
+ *   fetch*  → Async functions that call the backend API
+ *   render* → Functions that update the DOM
+ *   build*  → Pure functions that return data structures (no DOM side-effects)
+ *
+ * Unified Chart:
+ *   All indicators (SMA20, SMA50, RSI, MACD, Bollinger Bands, Volume) are
+ *   overlaid on a SINGLE Plotly panel. RSI uses a secondary y-axis (right).
+ *   Volume bars are scaled to 20% of the chart height via yaxis range tricks.
+ *   The `activeIndicators` Set tracks which overlays are currently visible.
+ *
+ * =============================================================================
+ */
 
-// Configuration
-const API_URL = '/api/stock-data';
-const SENTIMENT_API_URL = '/api/sentiment-score';
-const LIVE_PRICE_API_URL = '/api/live-price';
-const FINANCIAL_RATIOS_URL = '/api/financial-ratios';
-const PULSE_NEWS_URL = '/api/pulse-news';
-const AUTO_REFRESH_INTERVAL = 300000; // 5 minutes
-const LIVE_PRICE_INTERVAL = 60000;    // 1 minute
-const SENTIMENT_REFRESH_INTERVAL = 300000; // 5 minutes
+'use strict';
 
-// State
-let currentTicker = '^NSEI';
-let autoRefreshTimer = null;
-let livePriceTimer = null;
-let sentimentTimer = null;
+// ─── API Base URL ─────────────────────────────────────────────────────────────
+const API_URL = 'http://127.0.0.1:8050';
 
-// DOM Elements
+// ─── DOM References ───────────────────────────────────────────────────────────
 const tickerInput = document.getElementById('tickerInput');
+const periodSelect = document.getElementById('periodSelect');
+const intervalSelect = document.getElementById('intervalSelect');
 const fetchBtn = document.getElementById('fetchBtn');
+const generateScoreBtn = document.getElementById('generateScoreBtn');
 const statusText = document.getElementById('statusText');
 const chartDiv = document.getElementById('chart');
 
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-    fetchBtn.addEventListener('click', handleFetchClick);
-    tickerInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') handleFetchClick();
-    });
+// Sidebar elements
+const sentimentScoreValue = document.getElementById('sentimentScoreValue');
+const sentimentLabel = document.getElementById('sentimentLabel');
+const sentimentNeedle = document.getElementById('sentimentNeedle');
+const confidenceBadge = document.getElementById('confidenceBadge');
+const confidenceValue = document.getElementById('confidenceValue');
+const livePriceValue = document.getElementById('livePriceValue');
+const livePriceChange = document.getElementById('livePriceChange');
+const techScore = document.getElementById('techScore');
+const newsScore = document.getElementById('newsScore');
+const liveScore = document.getElementById('liveScore');
+const newsList = document.getElementById('newsList');
+const signalChipsContainer = document.getElementById('signalChipsContainer');
 
-    // Initial load
-    fetchStockData(currentTicker);
-    fetchSentimentScore(currentTicker);
-    fetchLivePrice(currentTicker);
-    fetchFinancialRatios(currentTicker);
-    fetchPulseNews();
+// Chatbot elements
+const chatbotContainer = document.getElementById('chatbotContainer');
+const chatbotMessages = document.getElementById('chatbotMessages');
+const chatbotInput = document.getElementById('chatbotInput');
+const chatbotSend = document.getElementById('chatbotSend');
+const chatbotToggle = document.getElementById('chatbotToggle');
+const chatbotClose = document.getElementById('chatbotClose');
 
-    // Auto-refresh
-    startAutoRefresh();
-    startLivePricePolling();
-    startSentimentRefresh();
-});
+// ─── Indicator Toggle State ───────────────────────────────────────────────────
+/**
+ * Set of currently active indicator overlays.
+ * Keys must match `data-indicator` attributes in index.html
+ * and the cases in buildIndicatorTraces().
+ */
+const activeIndicators = new Set(['sma20', 'volume']);
 
-// Fetch stock data from API
-async function fetchStockData(ticker) {
-    try {
-        updateStatus('Loading...');
-        fetchBtn.classList.add('loading');
+/** Last fetched chart data — stored so toggles can re-render without a new API call. */
+let lastChartData = null;
 
-        const response = await fetch(`${API_URL}?ticker=${encodeURIComponent(ticker)}`);
+// ─── WebSocket ────────────────────────────────────────────────────────────────
+let socket = null;
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+// ─── Polling Intervals ────────────────────────────────────────────────────────
+let livePriceInterval = null;
 
-        const data = await response.json();
+// =============================================================================
+// STATUS HELPERS
+// =============================================================================
 
-        if (data.error) {
-            throw new Error(data.error);
-        }
-
-        renderChart(data);
-        currentTicker = ticker;
-        updateStatus('Ready');
-
-    } catch (error) {
-        console.error('Error fetching data:', error);
-        updateStatus('Error: ' + error.message);
-    } finally {
-        fetchBtn.classList.remove('loading');
-    }
+/**
+ * Update the status text in the toolbar.
+ * @param {string} msg
+ */
+function updateStatus(msg) {
+    if (statusText) statusText.textContent = msg;
 }
 
-// Render Plotly chart — Top: Candles + SMA + Volume overlay | Bottom: RSI
-function renderChart(data) {
-    const { dates, open, high, low, close, volume, sma_20, rsi, ticker } = data;
+// =============================================================================
+// INDICATOR TOGGLE LOGIC
+// =============================================================================
 
+/**
+ * Initialise indicator toggle buttons.
+ * Each button with class `ind-toggle` toggles its `data-indicator` key
+ * in `activeIndicators` and re-renders the chart.
+ */
+function initIndicatorToggles() {
+    document.querySelectorAll('.ind-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const key = btn.dataset.indicator;
+            if (activeIndicators.has(key)) {
+                activeIndicators.delete(key);
+                btn.classList.remove('active');
+            } else {
+                activeIndicators.add(key);
+                btn.classList.add('active');
+            }
+            // Re-render chart with current data and new indicator selection
+            if (lastChartData) {
+                renderChart(lastChartData);
+            }
+        });
+    });
+}
+
+// =============================================================================
+// CHART BUILDING
+// =============================================================================
+
+/**
+ * Build the candlestick trace (always shown).
+ * @param {Object} data - API response from /api/stock-data
+ * @returns {Object} Plotly trace
+ */
+function buildCandlestickTrace(data) {
+    return {
+        type: 'candlestick',
+        x: data.dates,
+        open: data.open,
+        high: data.high,
+        low: data.low,
+        close: data.close,
+        name: 'OHLC',
+        yaxis: 'y',
+        increasing: { line: { color: '#26a69a', width: 1 }, fillcolor: '#26a69a' },
+        decreasing: { line: { color: '#ef5350', width: 1 }, fillcolor: '#ef5350' },
+        whiskerwidth: 0.5,
+    };
+}
+
+/**
+ * Build all active indicator traces based on `activeIndicators`.
+ * All price-scale indicators use yaxis:'y'.
+ * RSI uses yaxis:'y2' (secondary right axis, 0–100).
+ * Volume uses yaxis:'y3' (secondary right axis, scaled to 20% of chart).
+ *
+ * @param {Object} data - API response from /api/stock-data
+ * @returns {Array<Object>} Array of Plotly traces
+ */
+function buildIndicatorTraces(data) {
     const traces = [];
 
-    // --- Candlestick (top panel, price y-axis on right) ---
-    traces.push({
-        type: 'candlestick',
-        x: dates,
-        open: open,
-        high: high,
-        low: low,
-        close: close,
-        name: 'OHLC',
-        xaxis: 'x',
-        yaxis: 'y',
-        increasing: { line: { color: '#26A69A' } },
-        decreasing: { line: { color: '#EF5350' } }
-    });
-
-    // 20-Day Moving Average (top panel, same price y-axis)
-    if (sma_20 && sma_20.length > 0) {
-        const validSmaData = [];
-        const validSmaDates = [];
-        for (let i = 0; i < sma_20.length; i++) {
-            const val = sma_20[i];
-            if (val !== null && !isNaN(val) && val > 0) {
-                validSmaData.push(val);
-                validSmaDates.push(dates[i]);
-            }
-        }
-        if (validSmaData.length >= 1) {
-            traces.push({
-                type: 'scatter',
-                x: validSmaDates,
-                y: validSmaData,
-                mode: 'lines',
-                name: '20-Day MA',
-                line: { color: '#FF9800', width: 2 },
-                xaxis: 'x',
-                yaxis: 'y',
-                connectgaps: false
-            });
-        }
+    // ── SMA 20 ────────────────────────────────────────────────────────────────
+    if (activeIndicators.has('sma20') && data.sma_20?.length) {
+        traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: data.dates,
+            y: data.sma_20,
+            name: 'SMA 20',
+            yaxis: 'y',
+            line: { color: '#f39c12', width: 1.5, dash: 'solid' },
+        });
     }
 
-    // --- Volume (top panel, overlaid, bars capped at 25% of panel height) ---
-    const volColors = close.map((c, i) => c >= open[i] ? 'rgba(38,166,154,0.4)' : 'rgba(239,83,80,0.4)');
-    const maxVol = Math.max(...volume);
-    traces.push({
-        type: 'bar',
-        x: dates,
-        y: volume,
-        name: 'Volume',
-        marker: { color: volColors },
-        xaxis: 'x',
-        yaxis: 'y3',
-        opacity: 0.5,
-        showlegend: true
-    });
-
-    // --- RSI (bottom panel, separate y2/x2 axes) ---
-    if (rsi && rsi.length > 0) {
-        const validRsiData = [];
-        const validRsiDates = [];
-        for (let i = 0; i < rsi.length; i++) {
-            const val = rsi[i];
-            if (val !== null && !isNaN(val) && val > 0 && val < 100) {
-                validRsiData.push(val);
-                validRsiDates.push(dates[i]);
-            }
-        }
-        if (validRsiData.length >= 1) {
-            traces.push({
-                type: 'scatter',
-                x: validRsiDates,
-                y: validRsiData,
-                mode: 'lines',
-                name: 'RSI',
-                line: { color: '#9C27B0', width: 2 },
-                xaxis: 'x2',
-                yaxis: 'y2',
-                connectgaps: false
-            });
-        }
+    // ── SMA 50 ────────────────────────────────────────────────────────────────
+    if (activeIndicators.has('sma50') && data.sma_50?.length) {
+        traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: data.dates,
+            y: data.sma_50,
+            name: 'SMA 50',
+            yaxis: 'y',
+            line: { color: '#9b59b6', width: 1.5, dash: 'solid' },
+        });
     }
 
-    // Layout: Top panel (candles+volume) 75%, Bottom panel (RSI) 25%
-    const layout = {
+    // ── Bollinger Bands ───────────────────────────────────────────────────────
+    if (activeIndicators.has('bb') && data.bb_upper?.length) {
+        // Upper band
+        traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: data.dates,
+            y: data.bb_upper,
+            name: 'BB Upper',
+            yaxis: 'y',
+            line: { color: 'rgba(52, 152, 219, 0.6)', width: 1, dash: 'dot' },
+            showlegend: true,
+        });
+        // Lower band — fill to upper to create the band area
+        traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: data.dates,
+            y: data.bb_lower,
+            name: 'BB Lower',
+            yaxis: 'y',
+            line: { color: 'rgba(52, 152, 219, 0.6)', width: 1, dash: 'dot' },
+            fill: 'tonexty',
+            fillcolor: 'rgba(52, 152, 219, 0.05)',
+            showlegend: false,
+        });
+        // Middle band (SMA20)
+        traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: data.dates,
+            y: data.bb_middle,
+            name: 'BB Mid',
+            yaxis: 'y',
+            line: { color: 'rgba(52, 152, 219, 0.4)', width: 1 },
+            showlegend: false,
+        });
+    }
+
+    // ── RSI (secondary right y-axis, 0–100) ──────────────────────────────────
+    if (activeIndicators.has('rsi') && data.rsi?.length) {
+        traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: data.dates,
+            y: data.rsi,
+            name: 'RSI (14)',
+            yaxis: 'y2',
+            line: { color: '#e74c3c', width: 1.5 },
+        });
+        // Overbought reference line at 70
+        traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: [data.dates[0], data.dates[data.dates.length - 1]],
+            y: [70, 70],
+            name: 'RSI 70',
+            yaxis: 'y2',
+            line: { color: 'rgba(231, 76, 60, 0.3)', width: 1, dash: 'dash' },
+            showlegend: false,
+        });
+        // Oversold reference line at 30
+        traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: [data.dates[0], data.dates[data.dates.length - 1]],
+            y: [30, 30],
+            name: 'RSI 30',
+            yaxis: 'y2',
+            line: { color: 'rgba(39, 174, 96, 0.3)', width: 1, dash: 'dash' },
+            showlegend: false,
+        });
+    }
+
+    // ── MACD (overlaid on price panel, normalised) ────────────────────────────
+    if (activeIndicators.has('macd') && data.macd?.length) {
+        traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: data.dates,
+            y: data.macd,
+            name: 'MACD',
+            yaxis: 'y4',
+            line: { color: '#1abc9c', width: 1.5 },
+        });
+        traces.push({
+            type: 'scatter',
+            mode: 'lines',
+            x: data.dates,
+            y: data.macd_signal,
+            name: 'MACD Signal',
+            yaxis: 'y4',
+            line: { color: '#e67e22', width: 1, dash: 'dot' },
+        });
+    }
+
+    // ── Volume (scaled to 20% of chart via y3 range) ──────────────────────────
+    if (activeIndicators.has('volume') && data.volume?.length) {
+        const maxVol = Math.max(...data.volume.filter(v => v != null));
+        traces.push({
+            type: 'bar',
+            x: data.dates,
+            y: data.volume,
+            name: 'Volume',
+            yaxis: 'y3',
+            marker: { color: 'rgba(100, 149, 237, 0.35)' },
+            // Volume bars sit at the very bottom of the chart
+        });
+        // Store maxVol on the trace for layout use
+        traces[traces.length - 1]._maxVol = maxVol;
+    }
+
+    return traces;
+}
+
+/**
+ * Build the Plotly layout for the unified single-panel chart.
+ * Uses multiple y-axes overlaid on the same x-axis:
+ *   y  → price (left axis, main)
+ *   y2 → RSI 0–100 (right axis, overlaid)
+ *   y3 → Volume (right axis, scaled to bottom 20%)
+ *   y4 → MACD (right axis, overlaid, small range)
+ *
+ * @param {Object} data  - API response
+ * @param {string} ticker
+ * @returns {Object} Plotly layout
+ */
+function buildChartLayout(data, ticker) {
+    const lastClose = data.close?.length ? data.close[data.close.length - 1] : 0;
+
+    // Volume max for scaling y3 so bars occupy bottom 20%
+    const maxVol = data.volume?.length
+        ? Math.max(...data.volume.filter(v => v != null))
+        : 1;
+
+    // Price range for y axis
+    const prices = [...(data.high || []), ...(data.low || [])].filter(v => v != null);
+    const minPrice = prices.length ? Math.min(...prices) : 0;
+    const maxPrice = prices.length ? Math.max(...prices) : 1;
+    const priceRange = maxPrice - minPrice;
+
+    return {
+        // ── Title ─────────────────────────────────────────────────────────────
         title: {
-            text: `${ticker} - Last: ${close[close.length - 1]?.toFixed(2) || 'N/A'}`,
-            font: { size: 16, family: 'Ubuntu, sans-serif', color: '#D1D4DC' },
+            text: `${ticker} — Last: ${lastClose?.toFixed ? lastClose.toFixed(2) : lastClose}`,
+            font: { size: 14, family: 'Inter, Ubuntu, sans-serif', color: '#D1D4DC' },
             x: 0.01,
-            xanchor: 'left'
+            xanchor: 'left',
         },
-        // --- Top panel: Price y-axis (right side) ---
-        yaxis: {
-            domain: [0.28, 1],
-            title: 'Price',
-            titlefont: { size: 12 },
-            side: 'right',
-            showgrid: true,
-            gridcolor: '#2A2E39'
-        },
-        // --- Top panel: Volume y-axis (overlaid, hidden labels, 25% max) ---
-        yaxis3: {
-            domain: [0.28, 1],
-            side: 'left',
-            overlaying: 'y',
-            range: [0, maxVol * 4],
-            showgrid: false,
-            showticklabels: false
-        },
-        // --- Top panel: X-axis (hidden tick labels, shared range) ---
-        xaxis: {
-            domain: [0, 1],
-            anchor: 'y',
-            showgrid: true,
-            gridcolor: '#2A2E39',
-            rangebreaks: [{ bounds: ['sat', 'mon'] }],
-            showticklabels: false
-        },
-        // --- Bottom panel: RSI y-axis ---
-        yaxis2: {
-            domain: [0, 0.23],
-            title: 'RSI',
-            titlefont: { size: 11, color: '#9C27B0' },
-            side: 'right',
-            range: [0, 100],
-            showgrid: true,
-            gridcolor: '#2A2E39',
-            tickvals: [30, 50, 70],
-            tickfont: { size: 10 }
-        },
-        // --- Bottom panel: RSI x-axis (with date labels) ---
-        xaxis2: {
-            domain: [0, 1],
-            anchor: 'y2',
-            showgrid: true,
-            gridcolor: '#2A2E39',
-            rangebreaks: [{ bounds: ['sat', 'mon'] }],
-            matches: 'x'
-        },
-        paper_bgcolor: '#131722',
-        plot_bgcolor: '#131722',
-        font: { family: 'Ubuntu, sans-serif', color: '#D1D4DC', size: 12 },
-        showlegend: true,
+
+        // ── Theme ─────────────────────────────────────────────────────────────
+        paper_bgcolor: '#000000',
+        plot_bgcolor: '#000000',
+        font: { family: 'Inter, Ubuntu, sans-serif', color: '#D1D4DC', size: 11 },
+
+        // ── Margins ───────────────────────────────────────────────────────────
+        margin: { l: 60, r: 80, t: 40, b: 40 },
+        height: null,   // Let CSS control height
+
+        // ── Hover ─────────────────────────────────────────────────────────────
+        hovermode: 'x unified',
+        hoverlabel: { bgcolor: '#1a1a2e', font: { color: '#D1D4DC' } },
+
+        // ── Legend ────────────────────────────────────────────────────────────
         legend: {
             orientation: 'h',
             yanchor: 'bottom',
             y: 1.01,
             xanchor: 'right',
             x: 1,
-            font: { size: 11 }
+            font: { size: 10 },
+            bgcolor: 'rgba(0,0,0,0)',
         },
-        margin: { l: 10, r: 60, t: 50, b: 40 },
-        hovermode: 'x unified',
-        xaxis_rangeslider_visible: false,
-        bargap: 0.1
-    };
 
-    // RSI reference lines (bottom panel only)
-    layout.shapes = [
-        {
-            type: 'line', xref: 'paper', yref: 'y2',
-            x0: 0, x1: 1, y0: 70, y1: 70,
-            line: { color: '#EF5350', width: 1, dash: 'dash' },
-            opacity: 0.5
+        // ── X Axis ────────────────────────────────────────────────────────────
+        xaxis: {
+            rangeslider: { visible: false },
+            gridcolor: '#111111',
+            linecolor: '#222222',
+            tickfont: { size: 10 },
+            rangebreaks: [{ bounds: ['sat', 'mon'] }],
         },
-        {
-            type: 'line', xref: 'paper', yref: 'y2',
-            x0: 0, x1: 1, y0: 30, y1: 30,
-            line: { color: '#26A69A', width: 1, dash: 'dash' },
-            opacity: 0.5
-        }
-    ];
 
-    const config = {
-        displayModeBar: false,
-        responsive: true
+        // ── Y Axis: Price (left) ──────────────────────────────────────────────
+        yaxis: {
+            title: { text: 'Price', font: { size: 10 } },
+            gridcolor: '#111111',
+            linecolor: '#222222',
+            tickfont: { size: 10 },
+            side: 'left',
+            // Extend range downward so volume bars don't overlap candles
+            range: [minPrice - priceRange * 0.25, maxPrice + priceRange * 0.05],
+        },
+
+        // ── Y Axis 2: RSI (right, 0–100) ──────────────────────────────────────
+        yaxis2: {
+            title: { text: 'RSI', font: { size: 10 } },
+            overlaying: 'y',
+            side: 'right',
+            range: [0, 100],
+            gridcolor: 'rgba(0,0,0,0)',   // No grid for secondary axes
+            tickfont: { size: 9 },
+            showgrid: false,
+            visible: activeIndicators.has('rsi'),
+        },
+
+        // ── Y Axis 3: Volume (right, scaled to bottom 20%) ────────────────────
+        yaxis3: {
+            overlaying: 'y',
+            side: 'right',
+            // Set range so max volume = 20% of chart height
+            range: [0, maxVol * 5],
+            showgrid: false,
+            showticklabels: false,
+            visible: activeIndicators.has('volume'),
+        },
+
+        // ── Y Axis 4: MACD (right, small range) ───────────────────────────────
+        yaxis4: {
+            title: { text: 'MACD', font: { size: 9 } },
+            overlaying: 'y',
+            side: 'right',
+            showgrid: false,
+            tickfont: { size: 9 },
+            visible: activeIndicators.has('macd'),
+            // Offset so it doesn't collide with RSI axis
+            position: 0.97,
+        },
     };
-
-    Plotly.newPlot(chartDiv, traces, layout, config);
 }
 
-// Handle fetch button click
-function handleFetchClick() {
-    const ticker = tickerInput.value.trim();
-    if (ticker) {
-        fetchStockData(ticker);
-        fetchSentimentScore(ticker);
-        fetchLivePrice(ticker);
-        fetchFinancialRatios(ticker);
-        fetchPulseNews();
-        currentTicker = ticker;
-        restartAutoRefresh();
-        restartLivePricePolling();
-        restartSentimentRefresh();
-    }
-}
-
-// Update status text
-function updateStatus(message) {
-    statusText.textContent = message;
-}
-
-// Auto-refresh functionality
-function startAutoRefresh() {
-    autoRefreshTimer = setInterval(() => {
-        fetchStockData(currentTicker);
-    }, AUTO_REFRESH_INTERVAL);
-}
-
-function restartAutoRefresh() {
-    if (autoRefreshTimer) {
-        clearInterval(autoRefreshTimer);
-    }
-    startAutoRefresh();
-}
-
-// ===== SENTIMENT SCORE FUNCTIONS =====
-
-// Fetch sentiment score from API
-async function fetchSentimentScore(ticker) {
-    const scoreEl = document.getElementById('sentimentScoreValue');
-    const labelEl = document.getElementById('sentimentLabel');
-
-    try {
-        // Show loading state
-        scoreEl.className = 'sentiment-score-value loading';
-        scoreEl.textContent = '...';
-        labelEl.textContent = 'Analyzing...';
-
-        const response = await fetch(`${SENTIMENT_API_URL}?ticker=${encodeURIComponent(ticker)}`);
-        const data = await response.json();
-
-        if (data.error) {
-            scoreEl.className = 'sentiment-score-value';
-            scoreEl.textContent = '--';
-            labelEl.textContent = 'Error';
-            return;
-        }
-
-        // Update main score
-        updateSentimentDisplay(data);
-
-    } catch (error) {
-        console.error('Sentiment fetch error:', error);
-        scoreEl.className = 'sentiment-score-value';
-        scoreEl.textContent = '--';
-        labelEl.textContent = 'Unavailable';
-    }
-}
-
-// Update all sentiment UI elements
-function updateSentimentDisplay(data) {
-    const score = data.score;
-    const label = data.label;
-
-    // Determine color class
-    let colorClass = 'neutral';
-    if (score > 10) colorClass = 'bullish';
-    else if (score < -10) colorClass = 'bearish';
-
-    // Update score value (big font)
-    const scoreEl = document.getElementById('sentimentScoreValue');
-    scoreEl.textContent = (score > 0 ? '+' : '') + score;
-    scoreEl.className = `sentiment-score-value ${colorClass}`;
-
-    // Update label
-    const labelEl = document.getElementById('sentimentLabel');
-    labelEl.textContent = label;
-    labelEl.className = `sentiment-score-label ${colorClass}`;
-
-    // Update meter needle position (map -100..+100 to 0%..100%)
-    const needlePos = ((score + 100) / 200) * 100;
-    const needleEl = document.getElementById('sentimentNeedle');
-    needleEl.style.left = `${needlePos}%`;
-
-    // Update breakdown scores
-    updateBreakdownScore('techScore', data.technical?.score);
-    updateBreakdownScore('newsScore', data.news?.score);
-    updateBreakdownScore('liveScore', data.live?.score);
-}
-
-// Render Zerodha Pulse news headlines in sidebar
-function renderPulseNews(headlines) {
-    const newsList = document.getElementById('newsList');
-    if (!newsList) return;
-
-    if (!headlines || headlines.length === 0) {
-        newsList.innerHTML = '<div class="news-placeholder">No recent news</div>';
+/**
+ * Render the unified chart with all active indicator overlays.
+ * Stores `data` in `lastChartData` so indicator toggles can re-render
+ * without a new API call.
+ *
+ * @param {Object} data - API response from /api/stock-data
+ */
+function renderChart(data) {
+    if (!data || !data.dates?.length) {
+        updateStatus('No chart data to display.');
         return;
     }
 
-    newsList.innerHTML = headlines.map(item => {
-        const publisher = item.publisher ? `<div class="news-item-publisher">${item.publisher}</div>` : '';
-        const url = item.url || '#';
-        return `
-            <div class="news-item">
-                <a href="${url}" target="_blank" rel="noopener">
-                    <div class="news-item-title">${item.title || 'Untitled'}</div>
-                </a>
-                ${publisher}
-            </div>
-        `;
+    lastChartData = data;
+    const ticker = data.ticker || tickerInput.value.trim();
+
+    const traces = [
+        buildCandlestickTrace(data),
+        ...buildIndicatorTraces(data),
+    ];
+    const layout = buildChartLayout(data, ticker);
+
+    Plotly.react(chartDiv, traces, layout, {
+        responsive: true,
+        displayModeBar: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ['toImage', 'sendDataToCloud'],
+    });
+}
+
+// =============================================================================
+// DATA FETCHING
+// =============================================================================
+
+/**
+ * Fetch OHLCV + indicator data from /api/stock-data and render the chart.
+ * @param {string} ticker
+ */
+async function fetchStockData(ticker) {
+    const period = periodSelect?.value || '5d';
+    const interval = intervalSelect?.value || '1d';
+
+    try {
+        updateStatus(`Fetching ${ticker} (${period}/${interval})...`);
+        fetchBtn.classList.add('loading');
+
+        const res = await fetch(`${API_URL}/api/stock-data?ticker=${encodeURIComponent(ticker)}&period=${period}&interval=${interval}`);
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+            updateStatus(`Error: ${data.error || res.statusText}`);
+            return;
+        }
+
+        renderChart(data);
+        updateStatus(`${ticker} loaded — ${data.dates?.length || 0} bars`);
+
+    } catch (err) {
+        console.error('[fetchStockData]', err);
+        updateStatus(`Error: ${err.message}`);
+    } finally {
+        fetchBtn.classList.remove('loading');
+    }
+}
+
+/**
+ * Fetch and display the live price for a ticker.
+ * @param {string} ticker
+ */
+async function fetchLivePrice(ticker) {
+    try {
+        const res = await fetch(`${API_URL}/api/live-price?ticker=${encodeURIComponent(ticker)}`);
+        const data = await res.json();
+
+        if (!res.ok || data.error) return;
+
+        livePriceValue.textContent = `₹${data.current_price?.toLocaleString('en-IN') || '--'}`;
+        const pct = data.change_pct ?? 0;
+        const sign = pct >= 0 ? '+' : '';
+        const cls = pct >= 0 ? 'positive' : 'negative';
+        livePriceChange.textContent = `${sign}${pct.toFixed(2)}%`;
+        livePriceChange.className = `live-price-change ${cls}`;
+
+    } catch (err) {
+        console.error('[fetchLivePrice]', err);
+    }
+}
+
+/**
+ * Fetch the full sentiment analysis from /api/sentiment-score and update
+ * the sidebar (score, label, confidence, breakdown, signals).
+ * @param {string} ticker
+ */
+async function fetchSentimentScore(ticker) {
+    try {
+        updateStatus(`Analyzing ${ticker}...`);
+        generateScoreBtn.classList.add('loading');
+
+        const res = await fetch(`${API_URL}/api/sentiment-score?ticker=${encodeURIComponent(ticker)}`);
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+            updateStatus(`Sentiment error: ${data.error}`);
+            return;
+        }
+
+        renderSentimentScore(data);
+        renderSignalActionBar(data.signals || []);
+        renderNewsHeadlines(data.news?.headlines || []);
+
+        updateStatus(`Analysis complete — ${data.label}`);
+
+    } catch (err) {
+        console.error('[fetchSentimentScore]', err);
+        updateStatus(`Error: ${err.message}`);
+    } finally {
+        generateScoreBtn.classList.remove('loading');
+    }
+}
+
+/**
+ * Fetch financial ratios from /api/financial-ratios and update the sidebar.
+ * @param {string} ticker
+ */
+async function fetchFinancialRatios(ticker) {
+    try {
+        const res = await fetch(`${API_URL}/api/financial-ratios?ticker=${encodeURIComponent(ticker)}`);
+        const data = await res.json();
+
+        if (!res.ok || data.error) return;
+
+        const r = data.ratios || {};
+        document.getElementById('peRatio').textContent = r.pe_ratio || '--';
+        document.getElementById('pbRatio').textContent = r.pb_ratio || '--';
+        document.getElementById('debtEquity').textContent = r.debt_equity || '--';
+        document.getElementById('marketCap').textContent = r.market_cap || '--';
+        document.getElementById('dividendYield').textContent = r.dividend_yield || '--';
+        document.getElementById('roeValue').textContent = r.roe || '--';
+        document.getElementById('epsValue').textContent = r.eps || '--';
+        document.getElementById('bookValue').textContent = r.book_value || '--';
+
+    } catch (err) {
+        console.error('[fetchFinancialRatios]', err);
+    }
+}
+
+// =============================================================================
+// RENDER HELPERS
+// =============================================================================
+
+/**
+ * Update the sentiment score section in the sidebar.
+ * @param {Object} data - Sentiment API response
+ */
+function renderSentimentScore(data) {
+    const score = data.score ?? 0;
+    const label = data.label || 'Neutral';
+
+    sentimentScoreValue.textContent = score;
+    sentimentLabel.textContent = label;
+
+    // Colour the score value
+    sentimentScoreValue.className = 'sentiment-score-value ' + (
+        score > 10 ? 'positive' : score < -10 ? 'negative' : 'neutral'
+    );
+
+    // Move the needle: score -100..+100 → 0..100% left
+    const needlePct = ((score + 100) / 200) * 100;
+    if (sentimentNeedle) sentimentNeedle.style.left = `${needlePct}%`;
+
+    // Score breakdown
+    if (techScore) techScore.textContent = data.technical?.score ?? '--';
+    if (newsScore) newsScore.textContent = data.news?.score ?? '--';
+    if (liveScore) liveScore.textContent = data.live?.score ?? '--';
+
+    // Confidence badge
+    renderConfidenceBadge(data.confidence ?? 0);
+}
+
+/**
+ * Update the confidence badge colour and text.
+ * @param {number} confidence - 0 to 100
+ */
+function renderConfidenceBadge(confidence) {
+    if (!confidenceBadge || !confidenceValue) return;
+    confidenceValue.textContent = `${confidence}%`;
+    confidenceBadge.className = 'confidence-badge ' + (
+        confidence >= 70 ? 'high' : confidence >= 40 ? 'medium' : 'low'
+    );
+}
+
+/**
+ * Populate the signal action bar at the bottom of the screen.
+ * Each signal string gets a colour-coded chip.
+ *
+ * Signal prefixes → chip class:
+ *   🟢 → bullish (green)
+ *   🔴 → bearish (red)
+ *   ⚠️ → warning (amber)
+ *   📈 → bullish
+ *   anything else → neutral (grey)
+ *
+ * @param {string[]} signals
+ */
+function renderSignalActionBar(signals) {
+    if (!signalChipsContainer) return;
+
+    if (!signals || signals.length === 0) {
+        signalChipsContainer.innerHTML =
+            '<span class="signal-chip neutral">No signals detected</span>';
+        return;
+    }
+
+    signalChipsContainer.innerHTML = signals.map(sig => {
+        const cls = sig.startsWith('🟢') || sig.startsWith('📈') ? 'bullish'
+            : sig.startsWith('🔴') ? 'bearish'
+                : sig.startsWith('⚠️') ? 'warning'
+                    : 'neutral';
+        return `<span class="signal-chip ${cls}">${sig}</span>`;
     }).join('');
 }
 
-// Fetch financial ratios from API
-async function fetchFinancialRatios(ticker) {
-    try {
-        const response = await fetch(`${FINANCIAL_RATIOS_URL}?ticker=${encodeURIComponent(ticker)}`);
-        const data = await response.json();
+/**
+ * Render news headlines in the sidebar.
+ * Each headline gets a coloured dot (green/red/grey) based on sentiment.
+ *
+ * @param {Array<{title, publisher, sentiment, url}>} headlines
+ */
+function renderNewsHeadlines(headlines) {
+    if (!newsList) return;
 
-        if (data.error) return;
-
-        const r = data.ratios || {};
-        const setRatio = (id, val) => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = val || '--';
-        };
-
-        setRatio('peRatio', r.pe_ratio);
-        setRatio('pbRatio', r.pb_ratio);
-        setRatio('debtEquity', r.debt_equity);
-        setRatio('marketCap', r.market_cap);
-        setRatio('dividendYield', r.dividend_yield);
-        setRatio('roeValue', r.roe);
-        setRatio('epsValue', r.eps);
-        setRatio('bookValue', r.book_value);
-
-    } catch (error) {
-        console.error('Financial ratios fetch error:', error);
-    }
-}
-
-// Fetch news from Zerodha Pulse
-async function fetchPulseNews() {
-    try {
-        const response = await fetch(PULSE_NEWS_URL);
-        const data = await response.json();
-
-        if (data.error) {
-            renderPulseNews([]);
-            return;
-        }
-
-        renderPulseNews(data.headlines || []);
-
-    } catch (error) {
-        console.error('Pulse news fetch error:', error);
-        renderPulseNews([]);
-    }
-}
-
-// Update individual breakdown score element
-function updateBreakdownScore(elementId, value) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-
-    if (value === undefined || value === null) {
-        el.textContent = '--';
-        el.className = 'breakdown-value';
+    if (!headlines || headlines.length === 0) {
+        newsList.innerHTML = '<div class="news-placeholder">No headlines available.</div>';
         return;
     }
 
-    el.textContent = (value > 0 ? '+' : '') + value;
-    if (value > 0) {
-        el.className = 'breakdown-value positive';
-    } else if (value < 0) {
-        el.className = 'breakdown-value negative';
-    } else {
-        el.className = 'breakdown-value neutral-val';
+    newsList.innerHTML = headlines.map(h => {
+        const dotCls = h.sentiment === 'positive' ? 'positive'
+            : h.sentiment === 'negative' ? 'negative'
+                : 'neutral';
+        const url = h.url || '#';
+        return `
+            <div class="news-item">
+                <span class="news-dot ${dotCls}"></span>
+                <div class="news-item-content">
+                    <a class="news-item-title" href="${url}" target="_blank" rel="noopener">
+                        ${h.title || 'No title'}
+                    </a>
+                    <span class="news-item-publisher">${h.publisher || ''}</span>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+// =============================================================================
+// WEBSOCKET
+// =============================================================================
+
+/**
+ * Initialise the Socket.IO connection (lazy — only called once).
+ * Listens for 'new_news' events and updates the news sidebar.
+ * @param {string} ticker
+ */
+function initWebSocket(ticker) {
+    if (socket) {
+        socket.emit('activate_news', { ticker });
+        return;
     }
-}
 
-// Fetch live price
-async function fetchLivePrice(ticker) {
-    try {
-        const response = await fetch(`${LIVE_PRICE_API_URL}?ticker=${encodeURIComponent(ticker)}`);
-        const data = await response.json();
+    socket = io(API_URL);
 
-        if (data.error) return;
+    socket.on('connect', () => {
+        console.log('[WS] Connected');
+        socket.emit('activate_news', { ticker });
+    });
 
-        // Update live price display
-        const priceEl = document.getElementById('livePriceValue');
-        const changeEl = document.getElementById('livePriceChange');
-
-        priceEl.textContent = data.current_price?.toLocaleString('en-IN', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }) || '--';
-
-        if (data.change !== undefined) {
-            const sign = data.change >= 0 ? '+' : '';
-            changeEl.textContent = `${sign}${data.change.toFixed(2)} (${sign}${data.change_pct.toFixed(2)}%)`;
-            changeEl.className = `live-price-change ${data.change >= 0 ? 'positive' : 'negative'}`;
-        }
-
-    } catch (error) {
-        console.error('Live price fetch error:', error);
-    }
-}
-
-// Live price polling
-function startLivePricePolling() {
-    livePriceTimer = setInterval(() => {
-        fetchLivePrice(currentTicker);
-    }, LIVE_PRICE_INTERVAL);
-}
-
-function restartLivePricePolling() {
-    if (livePriceTimer) clearInterval(livePriceTimer);
-    startLivePricePolling();
-}
-
-// Sentiment refresh
-function startSentimentRefresh() {
-    sentimentTimer = setInterval(() => {
-        fetchSentimentScore(currentTicker);
-    }, SENTIMENT_REFRESH_INTERVAL);
-}
-
-function restartSentimentRefresh() {
-    if (sentimentTimer) clearInterval(sentimentTimer);
-    startSentimentRefresh();
-}
-
-// ===== CHATBOT FUNCTIONALITY =====
-
-// Chatbot DOM Elements
-const chatbotToggle = document.getElementById('chatbotToggle');
-const chatbotContainer = document.getElementById('chatbotContainer');
-const chatbotClose = document.getElementById('chatbotClose');
-const chatbotInput = document.getElementById('chatbotInput');
-const chatbotSend = document.getElementById('chatbotSend');
-const chatbotMessages = document.getElementById('chatbotMessages');
-
-// Chatbot State
-let isChatbotOpen = false;
-
-// Initialize chatbot event listeners
-document.addEventListener('DOMContentLoaded', () => {
-    chatbotToggle.addEventListener('click', toggleChatbot);
-    chatbotClose.addEventListener('click', toggleChatbot);
-    chatbotSend.addEventListener('click', sendMessage);
-    chatbotInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
+    socket.on('new_news', data => {
+        const headlines = data?.headlines || [];
+        if (headlines.length > 0) {
+            renderNewsHeadlines(headlines);
         }
     });
-});
 
-// Toggle chatbot visibility
-function toggleChatbot() {
-    isChatbotOpen = !isChatbotOpen;
-    chatbotContainer.classList.toggle('active', isChatbotOpen);
-
-    if (isChatbotOpen) {
-        chatbotInput.focus();
-    }
+    socket.on('disconnect', () => console.log('[WS] Disconnected'));
 }
 
-// Send message to chatbot
-async function sendMessage() {
-    const message = chatbotInput.value.trim();
+// =============================================================================
+// CHATBOT
+// =============================================================================
 
-    if (!message) return;
+/**
+ * Append a message bubble to the chatbot panel.
+ * @param {string} text
+ * @param {'user'|'bot'} sender
+ */
+function appendChatMessage(text, sender) {
+    const div = document.createElement('div');
+    div.className = `chatbot-message ${sender}-message`;
+    div.textContent = text;
+    chatbotMessages.appendChild(div);
+    chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
+}
 
-    // Add user message to chat
-    addMessage(message, 'user');
+/**
+ * Send the user's message to /api/chatbot and display the response.
+ */
+async function onChatbotSend() {
+    const msg = chatbotInput.value.trim();
+    if (!msg) return;
+
+    appendChatMessage(msg, 'user');
     chatbotInput.value = '';
 
-    // Disable input while processing
-    chatbotSend.disabled = true;
-    chatbotInput.disabled = true;
-
-    // Show typing indicator
-    const typingIndicator = addTypingIndicator();
-
     try {
-        const response = await fetch('/api/chatbot', {
+        const res = await fetch(`${API_URL}/api/chatbot`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ message })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: msg }),
         });
-
-        const data = await response.json();
-
-        // Remove typing indicator
-        typingIndicator.remove();
-
-        if (data.error) {
-            addMessage(`Error: ${data.error}`, 'bot');
-        } else {
-            addMessage(data.response, 'bot');
-        }
-
-    } catch (error) {
-        typingIndicator.remove();
-        addMessage('Sorry, I encountered an error. Please try again.', 'bot');
-        console.error('Chatbot error:', error);
-    } finally {
-        // Re-enable input
-        chatbotSend.disabled = false;
-        chatbotInput.disabled = false;
-        chatbotInput.focus();
+        const data = await res.json();
+        appendChatMessage(data.response || data.error || 'No response.', 'bot');
+    } catch (err) {
+        appendChatMessage(`Error: ${err.message}`, 'bot');
     }
 }
 
-// Add message to chat window
-function addMessage(text, type) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `chatbot-message ${type}-message`;
-    messageDiv.textContent = text;
+// =============================================================================
+// EVENT HANDLERS
+// =============================================================================
 
-    chatbotMessages.appendChild(messageDiv);
+/** Handle "Update Chart" button click. */
+function onFetchButtonClick() {
+    const ticker = tickerInput.value.trim().toUpperCase();
+    if (!ticker) return;
+    tickerInput.value = ticker;
 
-    // Scroll to bottom
-    chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
+    // Clear any existing live price polling
+    if (livePriceInterval) clearInterval(livePriceInterval);
 
-    return messageDiv;
+    fetchStockData(ticker);
+    fetchLivePrice(ticker);
+
+    // Poll live price every 30 seconds
+    livePriceInterval = setInterval(() => fetchLivePrice(ticker), 30_000);
 }
 
-// Add typing indicator
-function addTypingIndicator() {
-    const typingDiv = document.createElement('div');
-    typingDiv.className = 'chatbot-message bot-message typing-indicator';
-    typingDiv.innerHTML = `
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-    `;
+/** Handle "Generate Score" button click. */
+function onGenerateScoreClick() {
+    const ticker = tickerInput.value.trim().toUpperCase();
+    if (!ticker) return;
 
-    chatbotMessages.appendChild(typingDiv);
-    chatbotMessages.scrollTop = chatbotMessages.scrollHeight;
-
-    return typingDiv;
+    fetchSentimentScore(ticker);
+    fetchFinancialRatios(ticker);
+    initWebSocket(ticker);
 }
+
+/** Handle Enter key in the ticker input. */
+function onTickerInputKeydown(e) {
+    if (e.key === 'Enter') onFetchButtonClick();
+}
+
+/** Handle Enter key in the chatbot input. */
+function onChatbotInputKeydown(e) {
+    if (e.key === 'Enter') onChatbotSend();
+}
+
+// =============================================================================
+// INITIALISATION
+// =============================================================================
+
+/**
+ * Wire up all event listeners and load the default chart on page load.
+ */
+function init() {
+    // Toolbar
+    fetchBtn?.addEventListener('click', onFetchButtonClick);
+    generateScoreBtn?.addEventListener('click', onGenerateScoreClick);
+    tickerInput?.addEventListener('keydown', onTickerInputKeydown);
+
+    // Period / interval selects trigger a chart refresh
+    periodSelect?.addEventListener('change', onFetchButtonClick);
+    intervalSelect?.addEventListener('change', onFetchButtonClick);
+
+    // Indicator toggles
+    initIndicatorToggles();
+
+    // Chatbot
+    chatbotSend?.addEventListener('click', onChatbotSend);
+    chatbotInput?.addEventListener('keydown', onChatbotInputKeydown);
+    chatbotToggle?.addEventListener('click', () => {
+        chatbotContainer.classList.toggle('open');
+    });
+    chatbotClose?.addEventListener('click', () => {
+        chatbotContainer.classList.remove('open');
+    });
+
+    // Load default chart on startup
+    const defaultTicker = tickerInput?.value?.trim() || '^NSEI';
+    fetchStockData(defaultTicker);
+    fetchLivePrice(defaultTicker);
+    livePriceInterval = setInterval(() => fetchLivePrice(defaultTicker), 30_000);
+}
+
+// Run after DOM is ready
+document.addEventListener('DOMContentLoaded', init);

@@ -1,28 +1,58 @@
+"""
+=============================================================================
+strategies.py
+=============================================================================
+Thin wrapper: applies all technical indicators to a chart DataFrame.
+All indicator math lives in indicators.py.
+
+Provides:
+  - apply_strategies(df) → df with indicator columns added
+
+Used by:
+  - main.py (/api/stock-data endpoint)
+=============================================================================
+"""
+
 import pandas as pd
+import indicators as ind
 
-def calculate_rsi(series, period=14):
-    """
-    Calculate RSI (Relative Strength Index) for a given series.
-    """
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
 
-def apply_strategies(df):
+def apply_strategies(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Applies technical indicators to the DataFrame.
+    Add all technical indicator columns to an OHLCV DataFrame.
+
+    Columns added:
+      SMA_20, SMA_50, RSI, MACD, MACD_Signal, MACD_Hist,
+      BB_Upper, BB_Middle, BB_Lower
+
+    Args:
+        df: DataFrame with at least 'Close' and 'Volume' columns.
+
+    Returns:
+        The same DataFrame with indicator columns added in-place.
     """
     if df.empty:
         return df
-    
-    # Strategy 1: 20-Period Simple Moving Average (SMA)
-    df['SMA_20'] = df['Close'].rolling(window=20).mean()
-    
-    # Strategy 2: RSI (Relative Strength Index)
-    df['RSI'] = calculate_rsi(df['Close'], period=14)
-    
+
+    close = df['Close']
+
+    # ── Moving Averages ───────────────────────────────────────────────────────
+    df['SMA_20'] = ind.sma(close, 20)
+    df['SMA_50'] = ind.sma(close, 50)
+
+    # ── RSI (14-period) ───────────────────────────────────────────────────────
+    df['RSI'] = ind.rsi(close, period=14)
+
+    # ── MACD (12/26/9) ────────────────────────────────────────────────────────
+    macd_line, signal_line, histogram = ind.macd(close)
+    df['MACD']        = macd_line
+    df['MACD_Signal'] = signal_line
+    df['MACD_Hist']   = histogram
+
+    # ── Bollinger Bands (20-period, 2σ) ───────────────────────────────────────
+    upper, middle, lower = ind.bollinger_bands(close)
+    df['BB_Upper']  = upper
+    df['BB_Middle'] = middle
+    df['BB_Lower']  = lower
+
     return df

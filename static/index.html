@@ -2,149 +2,65 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Stock Market Simulator</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <meta name="description"
+        content="Real-time stock chart with technical indicators, sentiment analysis, and AI chatbot." />
+
+    <!-- ── CSS ──────────────────────────────────────────────────────────────── -->
+    <link rel="stylesheet" href="/static/css/base.css" />
+    <link rel="stylesheet" href="/static/css/toolbar.css" />
+    <link rel="stylesheet" href="/static/css/layout.css" />
+    <link rel="stylesheet" href="/static/css/sidebar.css" />
+    <link rel="stylesheet" href="/static/css/signals.css" />
+    <link rel="stylesheet" href="/static/css/chatbot.css" />
+
+    <!-- ── Third-party (CDN) ────────────────────────────────────────────────── -->
+    <!-- Plotly for the unified chart -->
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <!-- Socket.IO for real-time news -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 
 <body>
-    <!-- Top Toolbar -->
-    <div class="toolbar">
-        <div class="toolbar-left">
-            <span class="ticker-label">Ticker:</span>
-            <input type="text" id="tickerInput" class="ticker-input" value="^NSEI" placeholder="Enter symbol...">
-            <button id="fetchBtn" class="fetch-btn">Fetch Data</button>
-        </div>
-        <div class="toolbar-right">
-            <span class="status-text" id="statusText">Ready</span>
-        </div>
-    </div>
 
-    <!-- Main Content Area: Chart Left + Sidebar Right -->
-    <div class="main-content">
-        <!-- Chart Container (Left) -->
-        <div class="chart-container">
-            <div id="chart"></div>
-        </div>
+    <!-- ═══════════════════════════════════════════════════════════════════════════
+     App Shell — mount points for dynamically loaded HTML partials.
+     main.js fetches all partials in parallel and injects them here.
+     ═══════════════════════════════════════════════════════════════════════════ -->
+    <div id="app">
 
-        <!-- Right Sidebar: Sentiment + News -->
-        <div class="right-sidebar" id="sentimentPanel">
-            <!-- Sentiment Score -->
-            <div class="sidebar-section sentiment-score-section">
-                <div class="sentiment-score-container">
-                    <div class="sentiment-score-value" id="sentimentScoreValue">--</div>
-                    <div class="sentiment-score-label" id="sentimentLabel">Loading...</div>
-                </div>
-                <div class="sentiment-meter">
-                    <div class="sentiment-meter-bar">
-                        <div class="sentiment-meter-fill" id="sentimentMeterFill"></div>
-                        <div class="sentiment-meter-needle" id="sentimentNeedle"></div>
-                    </div>
-                    <div class="sentiment-meter-labels">
-                        <span class="bearish-label">-100</span>
-                        <span class="neutral-label">0</span>
-                        <span class="bullish-label">+100</span>
-                    </div>
-                </div>
+        <!-- Row 1: Toolbar (ticker, period, interval, buttons) -->
+        <div id="mount-toolbar"></div>
+
+        <!-- Row 2: Indicator toggle bar -->
+        <div id="mount-indicator-bar"></div>
+
+        <!-- Row 3: Chart + Sidebar -->
+        <div class="main-content">
+
+            <!-- Left: Plotly chart -->
+            <div class="chart-container">
+                <div id="chart"></div>
             </div>
 
-            <!-- Live Price -->
-            <div class="sidebar-section">
-                <div class="sidebar-section-title">LIVE PRICE</div>
-                <div class="live-price-value" id="livePriceValue">--</div>
-                <div class="live-price-change" id="livePriceChange">--</div>
-            </div>
+            <!-- Right: Sidebar (injected into this mount) -->
+            <div id="mount-sidebar"></div>
 
-            <!-- Score Breakdown -->
-            <div class="sidebar-section">
-                <div class="sidebar-section-title">SCORE BREAKDOWN</div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">Technical (5Y)</span>
-                    <span class="breakdown-value" id="techScore">--</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">News</span>
-                    <span class="breakdown-value" id="newsScore">--</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">Live Price</span>
-                    <span class="breakdown-value" id="liveScore">--</span>
-                </div>
-            </div>
-
-            <!-- Financial Ratios -->
-            <div class="sidebar-section">
-                <div class="sidebar-section-title">FINANCIAL RATIOS</div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">P/E Ratio</span>
-                    <span class="ratio-value" id="peRatio">--</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">P/B Ratio</span>
-                    <span class="ratio-value" id="pbRatio">--</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">Debt/Equity</span>
-                    <span class="ratio-value" id="debtEquity">--</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">Market Cap</span>
-                    <span class="ratio-value" id="marketCap">--</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">Dividend Yield</span>
-                    <span class="ratio-value" id="dividendYield">--</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">ROE</span>
-                    <span class="ratio-value" id="roeValue">--</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">EPS</span>
-                    <span class="ratio-value" id="epsValue">--</span>
-                </div>
-                <div class="breakdown-item">
-                    <span class="breakdown-label">Book Value</span>
-                    <span class="ratio-value" id="bookValue">--</span>
-                </div>
-            </div>
-
-            <!-- Zerodha Pulse News -->
-            <div class="sidebar-section news-section">
-                <div class="sidebar-section-title">MARKET NEWS <span class="pulse-badge">Zerodha Pulse</span></div>
-                <div class="news-list" id="newsList">
-                    <div class="news-placeholder">Loading news...</div>
-                </div>
-            </div>
         </div>
-    </div>
 
-    <!-- Chatbot Widget -->
-    <div class="chatbot-container" id="chatbotContainer">
-        <div class="chatbot-header">
-            <span class="chatbot-title">📈 Stock Assistant</span>
-            <button class="chatbot-close" id="chatbotClose">✕</button>
-        </div>
-        <div class="chatbot-messages" id="chatbotMessages">
-            <div class="chatbot-message bot-message">
-                Hi! I'm your stock market assistant. Ask me anything about stocks, trading strategies, or technical
-                indicators!
-            </div>
-        </div>
-        <div class="chatbot-input-container">
-            <input type="text" id="chatbotInput" class="chatbot-input" placeholder="Ask about stocks...">
-            <button id="chatbotSend" class="chatbot-send">Send</button>
-        </div>
-    </div>
+    </div><!-- /#app -->
 
-    <!-- Chatbot Toggle Button -->
-    <button class="chatbot-toggle" id="chatbotToggle">
-        💬
-    </button>
+    <!-- Fixed bottom: signal action bar -->
+    <div id="mount-signal-bar"></div>
 
-    <script src="app.js"></script>
+    <!-- Fixed corner: chatbot widget -->
+    <div id="mount-chatbot"></div>
+
+    <!-- ── Application entry point (ES module) ──────────────────────────────────── -->
+    <script type="module" src="/static/js/main.js"></script>
+
 </body>
 
 </html>

@@ -1,0 +1,87 @@
+/* =============================================================================
+   signals.css — Signal action bar (fixed bottom) + chip styles
+   ============================================================================= */
+
+.signal-action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: var(--signal-bar-h);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    background: #050505;
+    border-top: 1px solid var(--border);
+    z-index: 100;
+    overflow: hidden;
+}
+
+.signal-bar-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.signal-chips-container {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    flex: 1;
+    scrollbar-width: none;
+}
+
+.signal-chips-container::-webkit-scrollbar {
+    display: none;
+}
+
+.signal-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 500;
+    white-space: nowrap;
+    animation: chipFadeIn 0.3s ease;
+}
+
+.signal-chip.bullish {
+    background: rgba(38, 166, 154, 0.15);
+    color: var(--bullish);
+    border: 1px solid rgba(38, 166, 154, 0.3);
+}
+
+.signal-chip.bearish {
+    background: rgba(239, 83, 80, 0.15);
+    color: var(--bearish);
+    border: 1px solid rgba(239, 83, 80, 0.3);
+}
+
+.signal-chip.warning {
+    background: rgba(243, 156, 18, 0.15);
+    color: var(--warning);
+    border: 1px solid rgba(243, 156, 18, 0.3);
+}
+
+.signal-chip.neutral {
+    background: rgba(96, 125, 139, 0.15);
+    color: var(--neutral);
+    border: 1px solid rgba(96, 125, 139, 0.3);
+}
+
+@keyframes chipFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

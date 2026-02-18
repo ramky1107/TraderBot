@@ -1,11 +1,41 @@
-yfinance==1.1.0
-mplfinance
-pandas
-numpy
-matplotlib
-plotly
-flask
-flask-cors
-google-generativeai
-beautifulsoup4
-requests
+# =============================================================================
+# requirements.txt
+# =============================================================================
+# Install all dependencies with:
+#   pip install -r requirements.txt
+#
+# Tested with Python 3.10+
+# =============================================================================
+
+# ── Data & Finance ────────────────────────────────────────────────────────────
+yfinance>=0.2.36
+pandas>=2.0.0
+numpy>=1.24.0
+
+# ── Machine Learning ──────────────────────────────────────────────────────────
+scikit-learn>=1.3.0
+scipy>=1.11.0
+
+# ── Charting ──────────────────────────────────────────────────────────────────
+plotly>=5.18.0
+matplotlib>=3.7.0
+mplfinance>=0.12.10b0
+
+# ── Web Framework ─────────────────────────────────────────────────────────────
+flask>=3.0.0
+flask-cors>=4.0.0
+flask-socketio>=5.3.6
+
+# ── WebSocket Transport ───────────────────────────────────────────────────────
+# eventlet is the recommended async backend for Flask-SocketIO in production.
+# It enables non-blocking I/O for the news broadcaster thread.
+eventlet>=0.35.2
+
+# ── AI / LLM ─────────────────────────────────────────────────────────────────
+google-generativeai>=0.4.0
+
+# ── Web Scraping ──────────────────────────────────────────────────────────────
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+# lxml is a faster HTML parser used by BeautifulSoup for Pulse scraping
+lxml>=4.9.0
