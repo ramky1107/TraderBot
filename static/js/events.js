@@ -39,11 +39,17 @@ export function onFetchButtonClick() {
     if (!ticker) return;
     if (dom.tickerInput) dom.tickerInput.value = ticker;
 
+    // Read period/interval directly from the live DOM elements.
+    // We query by ID here (not via dom module refs) to guarantee we always
+    // get the current select value regardless of module binding timing.
+    const period = document.getElementById('periodSelect')?.value || '5d';
+    const interval = document.getElementById('intervalSelect')?.value || '1d';
+
     // Reset live-price polling for the new ticker
     const prev = getLivePriceInterval();
     if (prev) clearInterval(prev);
 
-    fetchStockData(ticker);
+    fetchStockData(ticker, period, interval);
     fetchLivePrice(ticker);
 
     setLivePriceInterval(

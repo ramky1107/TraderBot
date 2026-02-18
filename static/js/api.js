@@ -22,18 +22,21 @@ import * as dom from './dom.js';
 
 /**
  * Fetch OHLCV + indicator data and render the chart.
+ *
  * @param {string} ticker
+ * @param {string} [period]   - yfinance period string (e.g. '5d', '1mo')
+ * @param {string} [interval] - yfinance interval string (e.g. '1d', '1h')
+ *
+ * period and interval are passed explicitly by the caller so the current
+ * select values are always used — avoids any module-binding timing issues.
  */
-export async function fetchStockData(ticker) {
-    const period = dom.periodSelect?.value || '5d';
-    const interval = dom.intervalSelect?.value || '1d';
-
+export async function fetchStockData(ticker, period = '5d', interval = '1d') {
     try {
         updateStatus(`Fetching ${ticker} (${period}/${interval})…`);
         dom.fetchBtn?.classList.add('loading');
 
         const res = await fetch(
-            `${API_URL}/api/stock-data?ticker=${encodeURIComponent(ticker)}&period=${period}&interval=${interval}`
+            `${API_URL}/api/stock-data?ticker=${encodeURIComponent(ticker)}&period=${encodeURIComponent(period)}&interval=${encodeURIComponent(interval)}`
         );
         const data = await res.json();
 
