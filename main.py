@@ -26,10 +26,25 @@ from flask_socketio import SocketIO, emit
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
-import google.generativeai as genai
+import google.genai as genai
 import os
 import threading
 import time
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+import logging
+
+# ─── Load Environment Variables ────────────────────────────────────────────────
+load_dotenv()
+
+# ─── Setup Logging ────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # ── Our modules ───────────────────────────────────────────────────────────────
 import data_manager
@@ -54,12 +69,39 @@ socketio = SocketIO(app, cors_allowed_origins='*')
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    gemini_client = genai.GenerativeModel('gemini-pro')
-    print('[Gemini] API configured.')
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        logger.info('[Gemini] API configured successfully.')
+        # Test the API key with a simple call
+        test_response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents='Say "Hello" in one word.'
+        )
+        if test_response.text.strip():
+            logger.info('[Gemini] API key validated successfully.')
+        else:
+            logger.warning('[Gemini] API key test returned empty response')
+    except Exception as e:
+        logger.error(f'[Gemini] API key validation failed: {e}')
+        logger.warning('[Gemini] Please check your GEMINI_API_KEY in .env file')
+        client = None
 else:
-    gemini_client = None
-    print('[Gemini] WARNING: GEMINI_API_KEY not set.')
+    client = None
+    logger.warning('[Gemini] WARNING: GEMINI_API_KEY not set in environment.')
+    logger.info('[Gemini] Get your free API key from: https://aistudio.google.com/app/apikey')
+
+# ─── Email Setup ──────────────────────────────────────────────────────────────
+
+EMAIL_USER = os.getenv('EMAIL_USER', '')
+EMAIL_PASS = os.getenv('EMAIL_PASS', '')  # App password for Gmail
+EMAIL_TO = os.getenv('EMAIL_TO', '')  # User's email
+SMTP_SERVER = 'smtp.gmail.com'
+SMTP_PORT = 587
+
+if EMAIL_USER and EMAIL_PASS and EMAIL_TO:
+    logger.info('[Email] Configured for sending reports.')
+else:
+    logger.warning('[Email] WARNING: Email credentials not set.')
 
 # ─── In-Memory Caches ─────────────────────────────────────────────────────────
 
@@ -129,11 +171,11 @@ def _broadcast_news_loop():
     while True:
         try:
             if active_tickers:
-                print(f'[WS] Broadcasting news for {active_tickers}...')
+                logger.info(f'[WS] Broadcasting news for {active_tickers}...')
                 news_data = get_pulse_news()
                 socketio.emit('new_news', news_data)
         except Exception as e:
-            print(f'[WS] News broadcast error: {e}')
+            logger.error(f'[WS] News broadcast error: {e}')
         time.sleep(120)
 
 
@@ -226,7 +268,7 @@ def get_stock_data():
         return jsonify(_build_stock_response(df, ticker))
 
     except Exception as e:
-        print(f'[API] /api/stock-data error: {e}')
+        logger.error(f'[API] /api/stock-data error: {e}')
         return jsonify({'error': str(e)}), 500
 
 
@@ -264,7 +306,7 @@ def get_live_price():
         })
 
     except Exception as e:
-        print(f'[API] /api/live-price error: {e}')
+        logger.error(f'[API] /api/live-price error: {e}')
         return jsonify({'error': str(e)}), 500
 
 
@@ -290,7 +332,7 @@ def get_sentiment_score():
         return jsonify(result)
 
     except Exception as e:
-        print(f'[API] /api/sentiment-score error: {e}')
+        logger.error(f'[API] /api/sentiment-score error: {e}')
         return jsonify({'error': str(e)}), 500
 
 
@@ -328,7 +370,7 @@ def get_financial_ratios():
         return jsonify(result)
 
     except Exception as e:
-        print(f'[API] /api/financial-ratios error: {e}')
+        logger.error(f'[API] /api/financial-ratios error: {e}')
         return jsonify({'error': str(e)}), 500
 
 
@@ -350,8 +392,143 @@ def get_pulse_news_endpoint():
         return jsonify(result)
 
     except Exception as e:
-        print(f'[API] /api/pulse-news error: {e}')
+        logger.error(f'[API] /api/pulse-news error: {e}')
         return jsonify({'error': str(e), 'headlines': []}), 500
+
+
+# ─── Gemini News Headlines Endpoint ───────────────────────────────────────────
+
+@app.route('/api/gemini-news', methods=['GET'])
+def get_gemini_news():
+    """
+    Get latest news for a company and process with Gemini AI.
+    Extracts simple English headlines suitable for further processing.
+    
+    Query params:
+      company : Company name (e.g., 'Apple')
+      ticker  : Optional stock ticker (e.g., 'AAPL')
+    
+    Returns:
+      JSON with simplified headlines, sentiment, and raw Gemini output for logging
+    """
+    try:
+        company = request.args.get('company', 'UNKNOWN')
+        ticker = request.args.get('ticker', '')
+        
+        # Import the news processing function
+        from news import process_company_news_gemini
+        
+        logger.info(f'[Gemini News] Processing news for {company} (ticker: {ticker})')
+        result = process_company_news_gemini(company, ticker)
+        
+        logger.info(f'[Gemini News] Result for {company}: {len(result.get("headlines", []))} headlines')
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        logger.error(f'[API] /api/gemini-news error: {e}')
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'company': request.args.get('company', 'UNKNOWN')
+        }), 500
+
+
+# ─── NIFTY Analysis and Email Functions ───────────────────────────────────────
+
+def generate_nifty_report():
+    """
+    Generate a detailed buy/sell report for NIFTY using Gemini AI.
+    """
+    if not client:
+        return "Gemini API not configured."
+
+    try:
+        # Fetch recent NIFTY data
+        df = data_manager.fetch_market_data(ticker="^NSEI", interval="1d", period="60d")
+        if df.empty:
+            return "Unable to fetch NIFTY data."
+
+        # Get current price and change
+        current_price = df['Close'].iloc[-1]
+        prev_close = df['Close'].iloc[-2] if len(df) > 1 else current_price
+        change_pct = ((current_price - prev_close) / prev_close) * 100 if prev_close != 0 else 0
+
+        # Simple trend analysis
+        ma_20 = df['Close'].rolling(20).mean().iloc[-1]
+        ma_50 = df['Close'].rolling(50).mean().iloc[-1] if len(df) >= 50 else None
+
+        # Volume analysis
+        avg_volume = df['Volume'].mean()
+        recent_volume = df['Volume'].iloc[-1]
+
+        # Prepare data summary
+        data_summary = f"""
+        Current Price: {current_price:.2f}
+        Change: {change_pct:.2f}%
+        20-day MA: {ma_20:.2f}
+        50-day MA: {ma_50:.2f if ma_50 else 'N/A'}
+        Average Volume: {avg_volume:.0f}
+        Recent Volume: {recent_volume:.0f}
+        Data Points: {len(df)}
+        """
+
+        # Prepare prompt for Gemini
+        prompt = f"""
+        Analyze the NIFTY index and provide a detailed trading report:
+
+        {data_summary}
+
+        Historical data statistics:
+        {df[['Open', 'High', 'Low', 'Close', 'Volume']].tail(10).to_string()}
+
+        Please provide:
+        1. Current market trend analysis
+        2. Technical indicators interpretation (MA crossover, volume analysis)
+        3. Support and resistance levels
+        4. Risk assessment and market sentiment
+        5. Clear BUY/SELL/HOLD recommendation with entry/exit points
+        6. Short-term and long-term outlook
+
+        Format as a professional trading report.
+        """
+
+        response = client.models.generate_content(model='gemini-2.0-flash-exp', contents=prompt)
+        return response.text
+
+    except Exception as e:
+        return f"Error generating report: {str(e)}"
+
+
+def send_email_report(subject, body):
+    """
+    Send an email with the report.
+    """
+    if not EMAIL_USER or not EMAIL_PASS or not EMAIL_TO:
+        logger.warning("[Email] Email not configured.")
+        return False
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_USER
+        msg['To'] = EMAIL_TO
+        msg['Subject'] = subject
+
+        msg.attach(MIMEText(body, 'plain'))
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        text = msg.as_string()
+        server.sendmail(EMAIL_USER, EMAIL_TO, text)
+        server.quit()
+
+        print("[Email] Report sent successfully.")
+        return True
+
+    except Exception as e:
+        print(f"[Email] Error sending email: {e}")
+        return False
 
 
 # ─── Chatbot Endpoint ─────────────────────────────────────────────────────────
@@ -360,30 +537,45 @@ def get_pulse_news_endpoint():
 def chatbot():
     """
     Stock-focused AI chatbot powered by Google Gemini.
-    Requires GEMINI_API_KEY environment variable.
+    Special commands: "send nifty report" to generate and email a report.
 
     Request body: { "message": "..." }
     """
     try:
-        if not gemini_client:
+        if not client:
             return jsonify({'error': 'Gemini API not configured.'}), 500
-
         data         = request.get_json()
         user_message = (data.get('message', '') or '').strip()
+        print(user_message)
         if not user_message:
             return jsonify({'error': 'No message provided'}), 400
+
+        # Check for special commands
+        if user_message.lower() in ['send nifty report', 'analyze nifty', 'nifty report']:
+            report = generate_nifty_report()
+            if send_email_report("NIFTY Trading Report", report):
+                response_text = "NIFTY analysis report has been generated and sent to your email."
+            else:
+                response_text = "Report generated, but failed to send email. Report: " + report
+            return jsonify({'response': response_text, 'success': True})
 
         system_ctx = (
             'You are a helpful stock market assistant. Answer questions about stocks, '
             'trading strategies, technical indicators, and financial concepts. '
-            'Keep responses concise. For real-time prices, direct users to the chart.'
+            'Keep responses concise. For real-time prices, direct users to the chart. '
+            'If asked for NIFTY analysis or report, suggest using "send nifty report" command.'
         )
         prompt   = f"{system_ctx}\n\nUser: {user_message}"
-        response = gemini_client.generate_content(prompt)
+        response = client.models.generate_content(model='gemini-2.5-flash-lite', contents=prompt)
+        
+        # Log the raw Gemini output
+        logger.info(f'[Chatbot] User message: {user_message}')
+        logger.info(f'[Chatbot] Gemini raw response:\n{response.text}')
+        
         return jsonify({'response': response.text, 'success': True})
 
     except Exception as e:
-        print(f'[API] /api/chatbot error: {e}')
+        logger.error(f'[API] /api/chatbot error: {e}')
         return jsonify({'error': str(e)}), 500
 
 
@@ -391,7 +583,7 @@ def chatbot():
 
 @socketio.on('connect')
 def handle_connect():
-    print('[WS] Client connected')
+    logger.info('[WS] Client connected')
 
 
 @socketio.on('activate_news')
@@ -411,7 +603,7 @@ def handle_activate_news(data: dict):
     try:
         emit('new_news', get_pulse_news())
     except Exception as e:
-        print(f'[WS] Immediate news error: {e}')
+        logger.error(f'[WS] Immediate news error: {e}')
 
     # Start background broadcaster if not running
     global news_thread
@@ -425,10 +617,10 @@ def handle_activate_news(data: dict):
 # ─── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    print('=' * 60)
-    print('  Stock Market Simulator — Flask + SocketIO')
-    print(f'  http://127.0.0.1:{SERVER_PORT}/')
-    print('=' * 60)
+    logger.info('=' * 60)
+    logger.info('  Stock Market Simulator — Flask + SocketIO')
+    logger.info(f'  http://127.0.0.1:{SERVER_PORT}/')
+    logger.info('=' * 60)
     socketio.run(
         app,
         debug=DEBUG,
