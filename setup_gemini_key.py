@@ -44,7 +44,7 @@ def test_api_key(api_key):
 
         # Try a simple test call
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-1.5-flash',
             contents='Say "Hello" in one word.'
         )
 

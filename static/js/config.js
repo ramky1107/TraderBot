@@ -4,7 +4,7 @@
  */
 
 /** Flask backend base URL */
-export const API_URL = 'http://127.0.0.1:8050';
+export const API_URL = window.location.origin;
 
 /** Default ticker shown on startup */
 export const DEFAULT_TICKER = '^NSEI';

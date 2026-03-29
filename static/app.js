@@ -21,7 +21,7 @@
 'use strict';
 
 // ─── API Base URL ─────────────────────────────────────────────────────────────
-const API_URL = 'http://127.0.0.1:8050';
+const API_URL = window.location.origin;
 
 // ─── DOM References ───────────────────────────────────────────────────────────
 const tickerInput = document.getElementById('tickerInput');

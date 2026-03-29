@@ -74,7 +74,7 @@ if GEMINI_API_KEY:
         logger.info('[Gemini] API configured successfully.')
         # Test the API key with a simple call
         test_response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-2.5-flash-lite',
             contents='Say "Hello" in one word.'
         )
         if test_response.text.strip():
@@ -493,7 +493,7 @@ def generate_nifty_report():
         Format as a professional trading report.
         """
 
-        response = client.models.generate_content(model='gemini-2.0-flash-exp', contents=prompt)
+        response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
         return response.text
 
     except Exception as e:

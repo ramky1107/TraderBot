@@ -35,11 +35,10 @@ logger = logging.getLogger(__name__)
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 USE_GEMINI_NEWS = os.getenv('USE_GEMINI_NEWS', 'True').lower() == 'true'
 MAX_HEADLINES = int(os.getenv('MAX_HEADLINES_PER_COMPANY', '5'))
-GEMINI_NEWS_MODEL = os.getenv('GEMINI_NEWS_MODEL', 'gemini-2.0-flash')
+GEMINI_NEWS_MODEL = os.getenv('GEMINI_NEWS_MODEL', 'gemini-1.5-flash')
 
 # Configure Gemini
 if GEMINI_API_KEY:
-    genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     logger.info('[Gemini] News module configured with API key.')
 else:
     logger.warning('[Gemini] API key not found. Gemini news processing disabled.')
