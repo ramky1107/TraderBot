@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 import data_manager
 import strategies
 import sentiment_analyzer
-from news       import get_pulse_news
+from news       import get_x_tweets
 from live_price import fetch_intraday_df
 from constants  import (
     SERVER_HOST, SERVER_PORT, DEBUG,
@@ -172,7 +172,7 @@ def _broadcast_news_loop():
         try:
             if active_tickers:
                 logger.info(f'[WS] Broadcasting news for {active_tickers}...')
-                news_data = get_pulse_news()
+                news_data = get_x_tweets()
                 socketio.emit('new_news', news_data)
         except Exception as e:
             logger.error(f'[WS] News broadcast error: {e}')
@@ -386,13 +386,13 @@ def get_pulse_news_endpoint():
         if _is_cache_fresh(pulse_news_cache, CACHE_TTL_NEWS):
             return jsonify(pulse_news_cache['data'])
 
-        result = get_pulse_news()
+        result = get_x_tweets()
         pulse_news_cache['data']        = result
         pulse_news_cache['last_update'] = datetime.now()
         return jsonify(result)
 
     except Exception as e:
-        logger.error(f'[API] /api/pulse-news error: {e}')
+        logger.error(f'[API] /api/x-news error: {e}')
         return jsonify({'error': str(e), 'headlines': []}), 500
 
 
@@ -601,7 +601,7 @@ def handle_activate_news(data: dict):
 
     # Immediate news push to the requesting client
     try:
-        emit('new_news', get_pulse_news())
+        emit('new_news', get_x_tweets())
     except Exception as e:
         logger.error(f'[WS] Immediate news error: {e}')
 

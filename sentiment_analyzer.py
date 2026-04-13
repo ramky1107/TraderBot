@@ -24,10 +24,11 @@ import yfinance as yf
 import pandas as pd
 
 # Import from our new focused modules
-from ai_model   import model_manager
+from ai_model   import model_manager, intrinsic_model_manager
 from scorer     import calculate_technical_score, calculate_confidence_score
 from news       import fetch_news_sentiment
 from live_price import calculate_live_price_score
+import indicators as ind
 
 
 # ─── Label Helper ─────────────────────────────────────────────────────────────
@@ -112,6 +113,16 @@ def get_sentiment_score(ticker: str) -> dict:
             # ── Step 2: AI model prediction ───────────────────────────────────
             features      = model_manager.extract_current_features(hist_df)
             dynamic_score = model_manager.predict_score(ticker, features)
+
+            # ── New Step: Intrinsic Value Prediction ──────────────────────────
+            intrinsic_features = {
+                'RSI': features['RSI'],
+                'SMA_20': features['SMA_20'],
+                'SMA_200': ind.safe_last(ind.sma(hist_df['Close'], 200), default=0.0),
+                'Volatility': ind.safe_last(hist_df['Close'].rolling(20).std(), default=0.0)
+            }
+            intrinsic_val = intrinsic_model_manager.predict_intrinsic_value(ticker, intrinsic_features)
+            result['intrinsic_value'] = intrinsic_val
 
             # ── Step 3: Rule-based technical scoring ──────────────────────────
             tech_score, tech_details, tech_signals = calculate_technical_score(hist_df)

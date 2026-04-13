@@ -25,6 +25,8 @@ import os
 import logging
 from dotenv import load_dotenv
 import google.genai as genai
+import tweepy
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 # ─── Load Environment Variables & Configure Gemini ──────────────────────────────
 load_dotenv()
@@ -37,11 +39,78 @@ USE_GEMINI_NEWS = os.getenv('USE_GEMINI_NEWS', 'True').lower() == 'true'
 MAX_HEADLINES = int(os.getenv('MAX_HEADLINES_PER_COMPANY', '5'))
 GEMINI_NEWS_MODEL = os.getenv('GEMINI_NEWS_MODEL', 'gemini-1.5-flash')
 
+# X (Twitter) Configuration
+X_BEARER_TOKEN = os.getenv('X_BEARER_TOKEN', '')
+
+# VADER Sentiment Analyzer
+vader_analyzer = SentimentIntensityAnalyzer()
+
 # Configure Gemini
 if GEMINI_API_KEY:
     logger.info('[Gemini] News module configured with API key.')
 else:
     logger.warning('[Gemini] API key not found. Gemini news processing disabled.')
+
+# ─── X (Twitter) News Fetching ────────────────────────────────────────────────
+
+def get_x_tweets(query: str = "business news OR stock market OR economy") -> dict:
+    """
+    Fetch recent tweets from X (Twitter) using the official API.
+    If X_BEARER_TOKEN is missing, returns simulated tweets for demo.
+
+    Returns:
+        Dict with keys 'headlines' (list of dicts) and 'source' (str).
+    """
+    if not X_BEARER_TOKEN:
+        logger.warning('[X News] No X_BEARER_TOKEN found. Returning simulated tweets.')
+        return {
+            'headlines': [
+                {'title': 'Market remains stable as investors await Fed meeting results.', 'url': 'https://twitter.com', 'publisher': '@MarketWatch', 'sentiment': 'neutral'},
+                {'title': 'Tech stocks surge following breakthrough in AI regulation talks.', 'url': 'https://twitter.com', 'publisher': '@TechCrunch', 'sentiment': 'positive'},
+                {'title': 'Crude oil prices drop 2% amid global demand concerns.', 'url': 'https://twitter.com', 'publisher': '@ReutersBiz', 'sentiment': 'negative'},
+                {'title': 'New startup Unicorn raises $500M in Series C funding.', 'url': 'https://twitter.com', 'publisher': '@BusinessInsider', 'sentiment': 'positive'},
+                {'title': 'Retail sales report shows unexpected growth in Q1.', 'url': 'https://twitter.com', 'publisher': '@CNBC', 'sentiment': 'positive'},
+            ],
+            'source': 'X (Twitter) - Simulated'
+        }
+
+    try:
+        client = tweepy.Client(bearer_token=X_BEARER_TOKEN)
+        # Search for recent tweets
+        response = client.search_recent_tweets(
+            query=f"{query} lang:en -is:retweet",
+            max_results=10,
+            tweet_fields=['created_at', 'author_id', 'text']
+        )
+
+        headlines = []
+        if response.data:
+            for tweet in response.data:
+                sentiment_label = _vader_classify(tweet.text)
+                headlines.append({
+                    'title': tweet.text[:200],
+                    'url': f"https://twitter.com/any/status/{tweet.id}",
+                    'publisher': f"Tweet ID: {tweet.id}",
+                    'sentiment': sentiment_label
+                })
+
+        return {'headlines': headlines, 'source': 'X (Twitter)'}
+
+    except Exception as e:
+        logger.error(f'[X News] Error fetching tweets: {e}')
+        return {'headlines': [], 'source': 'X (Twitter) Error', 'error': str(e)}
+
+
+def _vader_classify(text: str) -> str:
+    """Classify text sentiment using VADER."""
+    scores = vader_analyzer.polarity_scores(text)
+    compound = scores['compound']
+    if compound >= 0.05:
+        return 'positive'
+    elif compound <= -0.05:
+        return 'negative'
+    else:
+        return 'neutral'
 
 # ─── Sentiment Keyword Lists ──────────────────────────────────────────────────
 
@@ -91,12 +160,12 @@ def _classify_headline(title: str) -> tuple[int, str]:
     return net, label
 
 
-# ─── yfinance News Sentiment ──────────────────────────────────────────────────
+# ─── yfinance & X News Sentiment ──────────────────────────────────────────────
 
 def fetch_news_sentiment(ticker: str) -> tuple[float, list[dict], str, int]:
     """
-    Fetch recent news for `ticker` via yfinance and run keyword-based
-    sentiment analysis on up to 15 headlines.
+    Fetch recent news for `ticker` via yfinance AND X (Twitter).
+    Analyzes up to 15 headlines across both sources.
 
     Args:
         ticker: Stock symbol (e.g. 'RELIANCE.NS').
@@ -109,37 +178,48 @@ def fetch_news_sentiment(ticker: str) -> tuple[float, list[dict], str, int]:
           - article_count : number of articles analyzed (used for confidence)
     """
     try:
-        stock = yf.Ticker(ticker)
-        news  = stock.news
-
-        if not news:
-            return 0.0, [], "No news available", 0
-
         total_sentiment = 0
         headlines: list[dict] = []
 
-        # Analyze up to 15 most recent articles
-        for item in news[:15]:
-            title     = item.get('title', '') or ''
-            publisher = item.get('publisher', '') or ''
-            net, label = _classify_headline(title)
-            total_sentiment += net
-            headlines.append({
-                'title':     title,
-                'publisher': publisher,
-                'sentiment': label,
-                'url':       item.get('link', '#'),
-            })
+        # 1. Fetch from yfinance
+        try:
+            stock = yf.Ticker(ticker)
+            yf_news = stock.news or []
+            for item in yf_news[:7]:
+                title = item.get('title', '') or ''
+                publisher = item.get('publisher', '') or ''
+                net, label = _classify_headline(title)
+                total_sentiment += net
+                headlines.append({
+                    'title': title,
+                    'publisher': publisher,
+                    'sentiment': label,
+                    'url': item.get('link', '#'),
+                })
+        except Exception as e:
+            logger.warning(f"[News] yfinance fetch failed for {ticker}: {e}")
+
+        # 2. Fetch from X (Twitter)
+        x_data = get_x_tweets(query=f"${ticker} OR {ticker} stock OR {ticker} news")
+        x_headlines = x_data.get('headlines', [])
+        for h in x_headlines[:8]:
+            net, label = _classify_headline(h['title']) # Keep keyword classifier consistent
+            # Or use VADER for tweets
+            v_label = h.get('sentiment', 'neutral')
+            v_net = 1 if v_label == 'positive' else (-1 if v_label == 'negative' else 0)
+            
+            total_sentiment += v_net
+            headlines.append(h)
 
         analyzed = len(headlines)
         if analyzed == 0:
-            return 0.0, [], "No analyzable news", 0
+            return 0.0, [], "No news available", 0
 
         # Normalize: average sentiment per article, scaled to ±30
         avg_sentiment = total_sentiment / analyzed
         news_score    = float(np.clip(avg_sentiment * 10, -NEWS_SCORE_CAP, NEWS_SCORE_CAP))
 
-        return round(news_score, 2), headlines, f"Analyzed {analyzed} articles", analyzed
+        return round(news_score, 2), headlines, f"Analyzed {analyzed} articles (incl. X)", analyzed
 
     except Exception as e:
         print(f"[News] Sentiment error for {ticker}: {e}")

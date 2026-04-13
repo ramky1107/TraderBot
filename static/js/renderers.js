@@ -37,6 +37,10 @@ export function renderSentimentScore(data) {
     if (dom.techScore) dom.techScore.textContent = data.technical?.score ?? '--';
     if (dom.newsScore) dom.newsScore.textContent = data.news?.score ?? '--';
     if (dom.liveScore) dom.liveScore.textContent = data.live?.score ?? '--';
+    if (dom.intrinsicValue) {
+        const iv = data.intrinsic_value;
+        dom.intrinsicValue.textContent = iv ? `₹${iv.toLocaleString()}` : '--';
+    }
 
     renderConfidenceBadge(data.confidence ?? 0);
 }
