@@ -21,7 +21,7 @@ DEBUG       = True
 CACHE_TTL_STOCK     = 60    # Stock OHLCV data cache (1 hour)
 CACHE_TTL_SENTIMENT = 5     # Sentiment score cache (5 minutes)
 CACHE_TTL_RATIOS    = 10    # Financial ratios cache (10 minutes)
-CACHE_TTL_NEWS      = 5     # Pulse news cache (5 minutes)
+CACHE_TTL_NEWS      = 5     # News cache (5 minutes)
 
 # ─── Sentiment Score Caps ─────────────────────────────────────────────────────
 
