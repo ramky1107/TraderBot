@@ -23,6 +23,8 @@ import yfinance as yf
 from bs4 import BeautifulSoup
 import os
 import logging
+import json
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 import google.genai as genai
 
@@ -70,6 +72,16 @@ NEWS_SCORE_CAP = 30
 
 
 # ─── Headline Classifier ──────────────────────────────────────────────────────
+
+def build_market_news_url(company_url: str) -> str:
+    """Return the Groww market-news URL for a company page link."""
+    if not company_url:
+        return ''
+    company_url = company_url.rstrip('/')
+    if company_url.endswith('/market-news'):
+        return company_url
+    return f'{company_url}/market-news'
+
 
 def _classify_headline(title: str) -> tuple[int, str]:
     """
@@ -216,6 +228,144 @@ def get_pulse_news() -> dict:
         headlines = _scrape_pulse_fallback(soup)
 
     return {'headlines': headlines, 'source': 'Zerodha Pulse'}
+
+
+# ─── Groww Feed Parsing ───────────────────────────────────────────────────────
+
+GROWW_FEED_URL = 'https://groww.in/v2/api/feed/public?page=1&publisherId=stocknewssummary&size=50'
+
+
+def fetch_groww_news(page: int = 1, size: int = 50) -> list[dict]:
+    """Fetch latest stock-news-summary items from Groww's public feed."""
+    try:
+        resp = http_requests.get(
+            GROWW_FEED_URL.replace('page=1', f'page={page}').replace('size=50', f'size={size}'),
+            headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        feed = payload.get('feed', []) if isinstance(payload, dict) else []
+        items = []
+        for entry in feed:
+            data = entry.get('data', {}) or {}
+            cta = (data.get('cta') or [{}])[0] if data.get('cta') else {}
+            title = data.get('title') or entry.get('title') or ''
+            body = data.get('body') or ''
+            company_name = cta.get('ctaText') or entry.get('name') or ''
+            company_url = cta.get('ctaUrl') or ''
+            if title:
+                items.append({
+                    'company': company_name,
+                    'title': title,
+                    'body': body,
+                    'ctaUrl': company_url,
+                    'marketNewsUrl': build_market_news_url(company_url),
+                    'publishedAt': entry.get('publishedAt'),
+                })
+        return items
+    except Exception as exc:
+        logger.warning(f'[Groww] Failed to fetch feed: {exc}')
+        return []
+
+
+def derive_outlook_from_news(company: str, title: str, body: str, page_excerpt: str = '') -> dict:
+    """Convert Groww news into a simple bullish/bearish/neutral trading outlook."""
+    text = ' '.join([company or '', title or '', body or '', page_excerpt or '']).lower()
+
+    bullish_hits = [kw for kw in ['profit', 'strong', 'rise', 'rally', 'beat', 'record', 'growth', 'upgrade', 'order', 'surge', 'gain', 'outperform', 'expansion', 'dividend', 'acquisition'] if kw in text]
+    bearish_hits = [kw for kw in ['loss', 'fall', 'decline', 'drop', 'warn', 'risk', 'cut', 'miss', 'downgrade', 'fraud', 'bankruptcy', 'default', 'penalty', 'lawsuit', 'recession', 'weak', 'shortage'] if kw in text]
+
+    if bullish_hits and not bearish_hits:
+        sentiment = 'bullish'
+    elif bearish_hits and not bullish_hits:
+        sentiment = 'bearish'
+    elif bullish_hits and bearish_hits:
+        sentiment = 'mixed'
+    else:
+        sentiment = 'neutral'
+
+    if sentiment == 'bullish':
+        summary = f"{company or 'The company'} is bullish from the latest headlines, with constructive catalysts that could support a positive intraday bias."
+        day_trade_plan = 'Watch for a breakout above the opening range and keep a tight stop if the move fails; prefer buying on strength with a defined risk.'
+    elif sentiment == 'bearish':
+        summary = f"{company or 'The company'} is bearish from the latest headlines, and the stock could remain under pressure today."
+        day_trade_plan = 'Watch for a breakdown below support and avoid aggressive longs until price stabilizes; prefer short setups only if momentum confirms.'
+    elif sentiment == 'mixed':
+        summary = f"{company or 'The company'} is mixed from the latest headlines, so the near-term move is likely to be choppy."
+        day_trade_plan = 'Trade the range until a clear breakout or breakdown appears; keep position size small and use strict stops.'
+    else:
+        summary = f"{company or 'The company'} is neutral from the latest headlines, with no clear directional catalyst yet."
+        day_trade_plan = 'Stay in a wait-and-watch mode and focus on price action around key support and resistance levels.'
+
+    return {
+        'company': company or 'Unknown',
+        'sentiment': sentiment,
+        'summary': summary,
+        'day_trade_plan': day_trade_plan,
+        'bias': 'positive' if sentiment == 'bullish' else 'negative' if sentiment == 'bearish' else 'neutral',
+        'signals': {
+            'bullish_hits': bullish_hits[:5],
+            'bearish_hits': bearish_hits[:5],
+        },
+    }
+
+
+def _fetch_market_news_excerpt(company_url: str) -> str:
+    """Fetch a short excerpt from the Groww market-news page for extra context."""
+    if not company_url:
+        return ''
+    market_news_url = build_market_news_url(company_url)
+    if not market_news_url:
+        return ''
+    try:
+        response = http_requests.get(market_news_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=20)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        meta_description = soup.find('meta', attrs={'name': 'description'})
+        if meta_description and meta_description.get('content'):
+            return meta_description['content'][:500]
+        title = soup.title.get_text(' ', strip=True) if soup.title else ''
+        text = ' '.join(soup.stripped_strings)
+        return ' '.join([title, text])[:500]
+    except Exception as exc:
+        logger.warning(f'[Groww] Failed to fetch market-news page excerpt: {exc}')
+        return ''
+
+
+def get_groww_company_outlook(company: str, company_url: str = '', page_excerpt: str = '') -> dict:
+    """Fetch Groww feed items for the company and build a trading outlook."""
+    items = fetch_groww_news()
+    matching = []
+    for item in items:
+        if company and company.lower() in (item.get('company') or '').lower():
+            matching.append(item)
+        elif company_url and company_url.lower() in (item.get('ctaUrl') or '').lower():
+            matching.append(item)
+
+    if not page_excerpt and company_url:
+        page_excerpt = _fetch_market_news_excerpt(company_url)
+
+    if matching:
+        item = matching[0]
+        return derive_outlook_from_news(
+            company=item.get('company') or company,
+            title=item.get('title', ''),
+            body=item.get('body', ''),
+            page_excerpt=page_excerpt,
+        )
+
+    if items:
+        first_item = items[0]
+        return derive_outlook_from_news(
+            company=company or first_item.get('company', ''),
+            title=first_item.get('title', ''),
+            body=first_item.get('body', ''),
+            page_excerpt=page_excerpt,
+        )
+
+    return derive_outlook_from_news(company=company, title='', body='', page_excerpt=page_excerpt)
+
 
 # ─── Gemini AI News Processing ───────────────────────────────────────────────────
 

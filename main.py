@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 import data_manager
 import strategies
 import sentiment_analyzer
-from news       import get_pulse_news
+from news       import get_pulse_news, get_groww_company_outlook
 from live_price import fetch_intraday_df
 from constants  import (
     SERVER_HOST, SERVER_PORT, DEBUG,
@@ -397,6 +397,20 @@ def get_pulse_news_endpoint():
 
 
 # ─── Gemini News Headlines Endpoint ───────────────────────────────────────────
+
+@app.route('/api/groww-news-outlook', methods=['GET'])
+def get_groww_news_outlook():
+    """Return a day-trading outlook generated from the latest Groww news feed."""
+    try:
+        company = request.args.get('company', '').strip()
+        company_url = request.args.get('company_url', '').strip()
+        page_excerpt = request.args.get('page_excerpt', '').strip()
+        result = get_groww_company_outlook(company=company, company_url=company_url, page_excerpt=page_excerpt)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f'[API] /api/groww-news-outlook error: {e}')
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
 
 @app.route('/api/gemini-news', methods=['GET'])
 def get_gemini_news():
