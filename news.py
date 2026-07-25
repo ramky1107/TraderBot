@@ -17,6 +17,7 @@ Used by:
 """
 
 import traceback
+import time
 import numpy as np
 import requests as http_requests
 import yfinance as yf
@@ -26,7 +27,11 @@ import logging
 import json
 from urllib.parse import urlparse
 from dotenv import load_dotenv
-import google.genai as genai
+
+try:
+    import google.genai as genai
+except Exception:  # pragma: no cover - optional dependency fallback
+    genai = None
 
 # ─── Load Environment Variables & Configure Gemini ──────────────────────────────
 load_dotenv()
@@ -233,16 +238,19 @@ def get_pulse_news() -> dict:
 # ─── Groww Feed Parsing ───────────────────────────────────────────────────────
 
 GROWW_FEED_URL = 'https://groww.in/v2/api/feed/public?page=1&publisherId=stocknewssummary&size=50'
+GROWW_FEED_CACHE: dict = {'items': [], 'fetched_at': 0.0}
+GROWW_PAGE_CACHE: dict = {}
 
 
 def fetch_groww_news(page: int = 1, size: int = 50) -> list[dict]:
-    """Fetch latest stock-news-summary items from Groww's public feed."""
+    """Fetch latest stock-news-summary items from Groww's public feed with short caching."""
+    now = time.time()
+    if now - GROWW_FEED_CACHE['fetched_at'] < 300 and GROWW_FEED_CACHE['items']:
+        return GROWW_FEED_CACHE['items']
+
     try:
-        resp = http_requests.get(
-            GROWW_FEED_URL.replace('page=1', f'page={page}').replace('size=50', f'size={size}'),
-            headers={'User-Agent': 'Mozilla/5.0'},
-            timeout=20,
-        )
+        url = GROWW_FEED_URL.replace('page=1', f'page={page}').replace('size=50', f'size={size}')
+        resp = http_requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
         resp.raise_for_status()
         payload = resp.json()
         feed = payload.get('feed', []) if isinstance(payload, dict) else []
@@ -263,10 +271,12 @@ def fetch_groww_news(page: int = 1, size: int = 50) -> list[dict]:
                     'marketNewsUrl': build_market_news_url(company_url),
                     'publishedAt': entry.get('publishedAt'),
                 })
+        GROWW_FEED_CACHE['items'] = items
+        GROWW_FEED_CACHE['fetched_at'] = now
         return items
     except Exception as exc:
         logger.warning(f'[Groww] Failed to fetch feed: {exc}')
-        return []
+        return GROWW_FEED_CACHE['items'] or []
 
 
 def derive_outlook_from_news(company: str, title: str, body: str, page_excerpt: str = '') -> dict:
@@ -318,19 +328,28 @@ def _fetch_market_news_excerpt(company_url: str) -> str:
     market_news_url = build_market_news_url(company_url)
     if not market_news_url:
         return ''
+
+    cache_key = market_news_url
+    now = time.time()
+    if cache_key in GROWW_PAGE_CACHE and now - GROWW_PAGE_CACHE[cache_key]['fetched_at'] < 600:
+        return GROWW_PAGE_CACHE[cache_key]['excerpt']
+
     try:
-        response = http_requests.get(market_news_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=20)
+        response = http_requests.get(market_news_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         meta_description = soup.find('meta', attrs={'name': 'description'})
         if meta_description and meta_description.get('content'):
-            return meta_description['content'][:500]
-        title = soup.title.get_text(' ', strip=True) if soup.title else ''
-        text = ' '.join(soup.stripped_strings)
-        return ' '.join([title, text])[:500]
+            excerpt = meta_description['content'][:500]
+        else:
+            title = soup.title.get_text(' ', strip=True) if soup.title else ''
+            text = ' '.join(soup.stripped_strings)
+            excerpt = ' '.join([title, text])[:500]
+        GROWW_PAGE_CACHE[cache_key] = {'excerpt': excerpt, 'fetched_at': now}
+        return excerpt
     except Exception as exc:
         logger.warning(f'[Groww] Failed to fetch market-news page excerpt: {exc}')
-        return ''
+        return GROWW_PAGE_CACHE.get(cache_key, {}).get('excerpt', '')
 
 
 def get_groww_company_outlook(company: str, company_url: str = '', page_excerpt: str = '') -> dict:
@@ -386,8 +405,8 @@ def get_gemini_news_headlines(company: str, headlines: list[str] | list[dict]) -
           - 'status': Processing status message
           - 'raw_output': Full Gemini response for logging
     """
-    if not USE_GEMINI_NEWS or not GEMINI_API_KEY:
-        logger.warning(f'[Gemini News] Disabled for {company}. Set USE_GEMINI_NEWS=True and GEMINI_API_KEY.')
+    if not USE_GEMINI_NEWS or not GEMINI_API_KEY or genai is None:
+        logger.warning(f'[Gemini News] Disabled for {company}. Set USE_GEMINI_NEWS=True and GEMINI_API_KEY, and ensure google-genai is installed.')
         return {
             'company': company,
             'headlines': [],
