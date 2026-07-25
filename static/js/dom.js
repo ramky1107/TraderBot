@@ -27,6 +27,7 @@ export let livePriceChange = null;
 export let techScore = null;
 export let newsScore = null;
 export let liveScore = null;
+export let intrinsicValue = null;
 export let newsList = null;
 
 // ── Signal bar ────────────────────────────────────────────────────────────────
@@ -64,6 +65,7 @@ export function populate() {
     techScore = document.getElementById('techScore');
     newsScore = document.getElementById('newsScore');
     liveScore = document.getElementById('liveScore');
+    intrinsicValue = document.getElementById('intrinsicValue');
     newsList = document.getElementById('newsList');
 
     signalChipsContainer = document.getElementById('signalChipsContainer');

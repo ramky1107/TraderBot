@@ -2,50 +2,31 @@
 =============================================================================
 main.py
 =============================================================================
-Flask + SocketIO backend for the Stock Market Simulator.
-
-API Endpoints:
-  GET  /                        → Serve index.html
-  GET  /partials/<name>.html    → Serve HTML partial fragments
-  GET  /api/stock-data          → OHLCV + indicators (cached per constants)
-  GET  /api/live-price          → Current price + intraday change
-  GET  /api/sentiment-score     → Full sentiment analysis
-  GET  /api/financial-ratios    → P/E, P/B, ROE, etc.
-  GET  /api/pulse-news          → Zerodha Pulse headlines
-  POST /api/chatbot             → Gemini AI stock assistant
-
-WebSocket Events:
-  activate_news  (client → server) : Start broadcasting news for a ticker
-  new_news       (server → client) : Push latest headlines to all clients
+The central entry point for the TraderBot.
+Connects the DataFetcher, SentimentEngine, and ValuationEngine.
+Provides both CLI and Web API interfaces.
 =============================================================================
 """
 
-from flask import Flask, jsonify, send_from_directory, request
-from flask_cors import CORS
-from flask_socketio import SocketIO, emit
-from datetime import datetime, timedelta
-import pandas as pd
-import numpy as np
-import google.genai as genai
 import os
-import threading
-import time
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv
 import logging
+from typing import Dict
+from flask import Flask, jsonify, request, render_template
+from flask_cors import CORS
+from dotenv import load_dotenv
 
-# ─── Load Environment Variables ────────────────────────────────────────────────
+# Import our new rewritten modules
+from data_fetcher import DataFetcher
+from sentiment_engine import SentimentEngine
+from valuation_engine import ValuationEngine
+
 load_dotenv()
 
-# ─── Setup Logging ────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s - %(message)s'
-)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+<<<<<<< HEAD
 # ── Our modules ───────────────────────────────────────────────────────────────
 import data_manager
 import strategies
@@ -58,322 +39,89 @@ from constants  import (
     DEFAULT_TICKER, DEFAULT_PERIOD, DEFAULT_INTERVAL,
     CHART_BG_COLOR,
 )
+=======
+# Initialize components
+data_fetcher = DataFetcher()
+sentiment_engine = SentimentEngine()
+valuation_engine = ValuationEngine()
+>>>>>>> refs/remotes/origin/main
 
-# ─── App Initialisation ───────────────────────────────────────────────────────
-
-app      = Flask(__name__, static_folder='static')
+# Initialize Flask app
+app = Flask(__name__, static_folder='static', template_folder='static')
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins='*')
 
-# ─── Gemini AI Setup ──────────────────────────────────────────────────────────
+# ─── Core Logic ─────────────────────────────────────────────────────────────
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-if GEMINI_API_KEY:
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        logger.info('[Gemini] API configured successfully.')
-        # Test the API key with a simple call
-        test_response = client.models.generate_content(
-            model='gemini-2.5-flash-lite',
-            contents='Say "Hello" in one word.'
-        )
-        if test_response.text.strip():
-            logger.info('[Gemini] API key validated successfully.')
-        else:
-            logger.warning('[Gemini] API key test returned empty response')
-    except Exception as e:
-        logger.error(f'[Gemini] API key validation failed: {e}')
-        logger.warning('[Gemini] Please check your GEMINI_API_KEY in .env file')
-        client = None
-else:
-    client = None
-    logger.warning('[Gemini] WARNING: GEMINI_API_KEY not set in environment.')
-    logger.info('[Gemini] Get your free API key from: https://aistudio.google.com/app/apikey')
+def analyze_ticker(ticker: str) -> Dict:
+    """Orchestrates the analysis of a given stock ticker."""
+    logger.info(f"Analyzing ticker: {ticker}")
+    
+    # 1. Fetch Data
+    # Get stock history (excluding holidays/weekends)
+    df = data_fetcher.fetch_stock_data(ticker)
+    # Get stock fundamental info
+    info = data_fetcher.get_stock_info(ticker)
+    # Get current price
+    current_price = info.get('currentPrice') or (df['Close'].iloc[-1] if not df.empty else 0.0)
+    
+    # 2. Sentiment Analysis (X/Twitter + Ollama)
+    tweets = data_fetcher.fetch_tweets(ticker, count=10)
+    analyzed_tweets = sentiment_engine.batch_analyze(tweets)
+    sentiment_score = sentiment_engine.get_aggregate_score(analyzed_tweets)
+    
+    # 3. Valuation Analysis (Intrinsic Price)
+    intrinsic_price, diff_percent = valuation_engine.calculate_intrinsic_value(info, current_price)
+    
+    # 4. Prepare Response
+    result = {
+        'ticker': ticker,
+        'current_price': round(current_price, 2),
+        'intrinsic_price': intrinsic_price,
+        'diff_percent': diff_percent,
+        'sentiment_score': sentiment_score,
+        'analyzed_tweets': analyzed_tweets[:5], # Send a few for display
+        'status': 'success'
+    }
+    
+    return result
 
-# ─── Email Setup ──────────────────────────────────────────────────────────────
-
-EMAIL_USER = os.getenv('EMAIL_USER', '')
-EMAIL_PASS = os.getenv('EMAIL_PASS', '')  # App password for Gmail
-EMAIL_TO = os.getenv('EMAIL_TO', '')  # User's email
-SMTP_SERVER = 'smtp.gmail.com'
-SMTP_PORT = 587
-
-if EMAIL_USER and EMAIL_PASS and EMAIL_TO:
-    logger.info('[Email] Configured for sending reports.')
-else:
-    logger.warning('[Email] WARNING: Email credentials not set.')
-
-# ─── In-Memory Caches ─────────────────────────────────────────────────────────
-
-data_cache       = {}   # { "TICKER_period_interval": { data, last_update } }
-sentiment_cache  = {}   # { "TICKER": { data, last_update } }
-ratios_cache     = {}   # { "TICKER": { data, last_update } }
-pulse_news_cache = {'data': None, 'last_update': None}
-
-# ─── WebSocket State ──────────────────────────────────────────────────────────
-
-news_thread      = None
-news_thread_lock = threading.Lock()
-active_tickers   = set()
-
-
-# ─── Formatting Helpers ───────────────────────────────────────────────────────
-
-def fmt_large(val) -> str:
-    """Format large numbers with T/B/Cr suffixes for Market Cap display."""
-    if val is None:
-        return 'N/A'
-    if val >= 1e12:  return f'₹{val / 1e12:.1f}T'
-    if val >= 1e9:   return f'₹{val / 1e9:.1f}B'
-    if val >= 1e7:   return f'₹{val / 1e7:.1f}Cr'
-    return f'₹{val:,.0f}'
-
-
-def fmt_pct(val) -> str:
-    """Format a decimal fraction as a percentage string."""
-    return 'N/A' if val is None else f'{val * 100:.2f}%'
-
-
-def fmt_ratio(val) -> str:
-    """Format a ratio to 2 decimal places."""
-    return 'N/A' if val is None else f'{val:.2f}'
-
-
-def nan_to_none(val):
-    """Convert NaN/inf to None so the value serialises cleanly to JSON null."""
-    if val is None:
-        return None
-    try:
-        if pd.isna(val) or np.isinf(val):
-            return None
-    except (TypeError, ValueError):
-        pass
-    return val
-
-
-# ─── Cache Helper ─────────────────────────────────────────────────────────────
-
-def _is_cache_fresh(cache_entry: dict, ttl_minutes: int) -> bool:
-    """Return True if the cache entry exists and is within its TTL."""
-    if not cache_entry or 'last_update' not in cache_entry:
-        return False
-    age = datetime.now() - cache_entry['last_update']
-    return age < timedelta(minutes=ttl_minutes)
-
-
-# ─── Background News Broadcaster ─────────────────────────────────────────────
-
-def _broadcast_news_loop():
-    """
-    Background thread: fetch Pulse news every 2 minutes and broadcast
-    to all connected WebSocket clients while any ticker is active.
-    """
-    while True:
-        try:
-            if active_tickers:
-                logger.info(f'[WS] Broadcasting news for {active_tickers}...')
-                news_data = get_pulse_news()
-                socketio.emit('new_news', news_data)
-        except Exception as e:
-            logger.error(f'[WS] News broadcast error: {e}')
-        time.sleep(120)
-
-
-# ─── Static File Routes ───────────────────────────────────────────────────────
+# ─── Web API Endpoints ──────────────────────────────────────────────────────
 
 @app.route('/')
-def serve_index():
-    """Serve the main HTML page."""
-    return send_from_directory('static', 'index.html')
+def index():
+    """Serves the main dashboard."""
+    return render_template('index.html')
 
-
-@app.route('/style.css')
-def serve_css():
-    return send_from_directory('static', 'style.css')
-
-
-@app.route('/partials/<path:filename>')
-def serve_partial(filename: str):
-    """Serve HTML partial fragments from static/partials/."""
-    return send_from_directory('static/partials', filename)
-
-
-@app.route('/static/<path:filename>')
-def serve_static(filename: str):
-    """Serve any file under static/ (css/, js/, partials/, etc.)."""
-    return send_from_directory('static', filename)
-
-
-# ─── Stock Data Endpoint ──────────────────────────────────────────────────────
-
-def _build_stock_response(df: pd.DataFrame, ticker: str) -> dict:
-    """
-    Serialise an enriched OHLCV DataFrame to a JSON-safe dict.
-    NaN values become None (→ JSON null) to avoid frontend parse errors.
-    """
-    def safe_col(col: str) -> list:
-        if col not in df.columns:
-            return []
-        return [nan_to_none(x) for x in df[col].tolist()]
-
-    return {
-        'ticker':      ticker,
-        'dates':       df.index.strftime('%Y-%m-%d %H:%M:%S').tolist(),
-        'open':        df['Open'].tolist(),
-        'high':        df['High'].tolist(),
-        'low':         df['Low'].tolist(),
-        'close':       df['Close'].tolist(),
-        'volume':      df['Volume'].tolist(),
-        'sma_20':      safe_col('SMA_20'),
-        'sma_50':      safe_col('SMA_50'),
-        'rsi':         safe_col('RSI'),
-        'macd':        safe_col('MACD'),
-        'macd_signal': safe_col('MACD_Signal'),
-        'macd_hist':   safe_col('MACD_Hist'),
-        'bb_upper':    safe_col('BB_Upper'),
-        'bb_middle':   safe_col('BB_Middle'),
-        'bb_lower':    safe_col('BB_Lower'),
-    }
-
-
-@app.route('/api/stock-data')
-def get_stock_data():
-    """
-    Fetch OHLCV + technical indicators for a ticker.
-
-    Query params:
-      ticker   : Stock symbol (default from constants)
-      period   : yfinance period string
-      interval : yfinance interval string
-
-    Cache TTL: CACHE_TTL_STOCK minutes per (ticker, period, interval).
-    """
+@app.route('/api/analyze/<ticker>')
+def api_analyze(ticker: str):
+    """Endpoint for ticker analysis."""
     try:
-        ticker   = request.args.get('ticker',   DEFAULT_TICKER)
-        period   = request.args.get('period',   DEFAULT_PERIOD)
-        interval = request.args.get('interval', DEFAULT_INTERVAL)
-        cache_key = f"{ticker}_{period}_{interval}"
+        result = analyze_ticker(ticker.upper())
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"API Error for {ticker}: {e}")
+        return jsonify({'error': str(e), 'status': 'error'}), 500
 
-        # Cache lookup
-        if cache_key in data_cache and _is_cache_fresh(data_cache[cache_key], CACHE_TTL_STOCK):
-            df = data_cache[cache_key]['data']
-        else:
-            df = data_manager.fetch_market_data(ticker=ticker, period=period, interval=interval)
-            data_cache[cache_key] = {'data': df, 'last_update': datetime.now()}
-
+@app.route('/api/history/<ticker>')
+def api_history(ticker: str):
+    """Endpoint for historical price data (cleaned for display)."""
+    try:
+        df = data_fetcher.fetch_stock_data(ticker.upper())
         if df.empty:
-            return jsonify({'error': f'No data for {ticker}'}), 404
-
-        df = strategies.apply_strategies(df)
-        return jsonify(_build_stock_response(df, ticker))
-
-    except Exception as e:
-        logger.error(f'[API] /api/stock-data error: {e}')
-        return jsonify({'error': str(e)}), 500
-
-
-# ─── Live Price Endpoint ──────────────────────────────────────────────────────
-
-@app.route('/api/live-price')
-def get_live_price():
-    """
-    Return current price and intraday change for a ticker.
-
-    Query params:
-      ticker : Stock symbol
-    """
-    try:
-        ticker  = request.args.get('ticker', DEFAULT_TICKER)
-        live_df = fetch_intraday_df(ticker)
-
-        if live_df.empty:
-            return jsonify({'error': 'No live data'}), 404
-
-        current_price = float(live_df['Close'].iloc[-1])
-        open_price    = float(live_df['Open'].iloc[0])
-        change        = current_price - open_price
-        change_pct    = (change / open_price) * 100
-
-        return jsonify({
-            'ticker':        ticker,
-            'current_price': round(current_price, 2),
-            'open':          round(open_price, 2),
-            'high':          round(float(live_df['High'].max()), 2),
-            'low':           round(float(live_df['Low'].min()), 2),
-            'change':        round(change, 2),
-            'change_pct':    round(change_pct, 2),
-            'timestamp':     datetime.now().isoformat(),
-        })
-
-    except Exception as e:
-        logger.error(f'[API] /api/live-price error: {e}')
-        return jsonify({'error': str(e)}), 500
-
-
-# ─── Sentiment Score Endpoint ─────────────────────────────────────────────────
-
-@app.route('/api/sentiment-score')
-def get_sentiment_score():
-    """
-    Run the full sentiment analysis pipeline for a ticker.
-    Cache TTL: CACHE_TTL_SENTIMENT minutes.
-
-    Query params:
-      ticker : Stock symbol
-    """
-    try:
-        ticker = request.args.get('ticker', DEFAULT_TICKER)
-
-        if ticker in sentiment_cache and _is_cache_fresh(sentiment_cache[ticker], CACHE_TTL_SENTIMENT):
-            return jsonify(sentiment_cache[ticker]['data'])
-
-        result = sentiment_analyzer.get_sentiment_score(ticker)
-        sentiment_cache[ticker] = {'data': result, 'last_update': datetime.now()}
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f'[API] /api/sentiment-score error: {e}')
-        return jsonify({'error': str(e)}), 500
-
-
-# ─── Financial Ratios Endpoint ────────────────────────────────────────────────
-
-@app.route('/api/financial-ratios')
-def get_financial_ratios():
-    """
-    Fetch fundamental financial ratios via yfinance.
-    Cache TTL: CACHE_TTL_RATIOS minutes.
-
-    Query params:
-      ticker : Stock symbol
-    """
-    try:
-        import yfinance as yf
-        ticker = request.args.get('ticker', DEFAULT_TICKER)
-
-        if ticker in ratios_cache and _is_cache_fresh(ratios_cache[ticker], CACHE_TTL_RATIOS):
-            return jsonify(ratios_cache[ticker]['data'])
-
-        info   = yf.Ticker(ticker).info
-        ratios = {
-            'pe_ratio':       fmt_ratio(info.get('trailingPE')),
-            'pb_ratio':       fmt_ratio(info.get('priceToBook')),
-            'debt_equity':    fmt_ratio(info.get('debtToEquity')),
-            'market_cap':     fmt_large(info.get('marketCap')),
-            'dividend_yield': fmt_pct(info.get('dividendYield')),
-            'roe':            fmt_pct(info.get('returnOnEquity')),
-            'eps':            fmt_ratio(info.get('trailingEps')),
-            'book_value':     fmt_ratio(info.get('bookValue')),
+            return jsonify({'error': 'No data found'}), 404
+        
+        # Prepare data for Chart.js or similar
+        history = {
+            'dates': df.index.strftime('%Y-%m-%d').tolist(),
+            'prices': df['Close'].tolist()
         }
-        result = {'ticker': ticker, 'ratios': ratios}
-        ratios_cache[ticker] = {'data': result, 'last_update': datetime.now()}
-        return jsonify(result)
-
+        return jsonify(history)
     except Exception as e:
-        logger.error(f'[API] /api/financial-ratios error: {e}')
         return jsonify({'error': str(e)}), 500
 
+# ─── Execution ─────────────────────────────────────────────────────────────
 
+<<<<<<< HEAD
 # ─── Pulse News Endpoint ──────────────────────────────────────────────────────
 
 @app.route('/api/pulse-news')
@@ -642,3 +390,10 @@ if __name__ == '__main__':
         port=SERVER_PORT,
         allow_unsafe_werkzeug=True
     )
+=======
+if __name__ == "__main__":
+    # If run directly, start the Flask server
+    port = int(os.getenv('SERVER_PORT', 8050))
+    logger.info(f"Starting TraderBot Server on port {port}...")
+    app.run(host='0.0.0.0', port=port, debug=True)
+>>>>>>> refs/remotes/origin/main
