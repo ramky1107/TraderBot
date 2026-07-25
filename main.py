@@ -89,6 +89,20 @@ valuation_engine = ValuationEngine() if ValuationEngine is not None else None
 app = Flask(__name__, static_folder='static', template_folder='static')
 CORS(app)
 
+# Try to init SocketIO if ENABLE_SOCKETIO env var is set and package is available
+ENABLE_SOCKETIO = os.getenv('ENABLE_SOCKETIO', 'False').lower() == 'true'
+socketio = None
+if ENABLE_SOCKETIO:
+    try:
+        from flask_socketio import SocketIO, emit
+        socketio = SocketIO(app, cors_allowed_origins='*')
+        logger.info('Flask-SocketIO initialized (enabled by ENABLE_SOCKETIO).')
+    except Exception:
+        socketio = None
+        logger.warning('flask_socketio present but failed to initialize; socket.io endpoints will be degraded.')
+else:
+    logger.info('Socket.IO support disabled (set ENABLE_SOCKETIO=True to enable).')
+
 # ─── Core Logic ─────────────────────────────────────────────────────────────
 
 def analyze_ticker(ticker: str) -> Dict:
@@ -274,6 +288,69 @@ def api_live_price():
     except Exception as e:
         logger.error(f"/api/live-price error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ─── Financial Ratios Endpoint ──────────────────────────────────────────────
+@app.route('/api/financial-ratios')
+def api_financial_ratios():
+    """Return simple financial ratios for a ticker."""
+    ticker = request.args.get('ticker', '').upper()
+    if not ticker:
+        return jsonify({'error': 'ticker required'}), 400
+
+    try:
+        import yfinance as yf
+        if data_fetcher is not None:
+            info = data_fetcher.get_stock_info(ticker)
+        else:
+            info = yf.Ticker(ticker).info
+
+        ratios = {
+            'pe_ratio': info.get('trailingPE'),
+            'pb_ratio': info.get('priceToBook'),
+            'debt_equity': info.get('debtToEquity'),
+            'market_cap': info.get('marketCap'),
+            'dividend_yield': info.get('dividendYield'),
+            'roe': info.get('returnOnEquity'),
+            'eps': info.get('trailingEps'),
+            'book_value': info.get('bookValue'),
+        }
+        return jsonify({'ticker': ticker, 'ratios': ratios})
+    except Exception as e:
+        logger.error(f"/api/financial-ratios error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── Sentiment Score Endpoint (basic) ───────────────────────────────────────
+@app.route('/api/sentiment-score')
+def api_sentiment_score():
+    """Return a simple news-based sentiment score for a ticker."""
+    ticker = request.args.get('ticker', '').upper()
+    if not ticker:
+        return jsonify({'error': 'ticker required'}), 400
+
+    try:
+        # Use news.fetch_news_sentiment if available
+        from news import fetch_news_sentiment
+        score, headlines, status, count = fetch_news_sentiment(ticker)
+        return jsonify({
+            'ticker': ticker,
+            'news_score': score,
+            'headlines': headlines,
+            'status': status,
+            'article_count': count,
+        })
+    except Exception as e:
+        logger.error(f"/api/sentiment-score error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── Socket.IO fallback when flask-socketio not installed ───────────────────
+if socketio is None:
+    @app.route('/socket.io/')
+    def socketio_fallback():
+        # Respond OK to polling attempts to avoid repeated 404 noise.
+        return ('', 200)
 
 # ─── Execution ─────────────────────────────────────────────────────────────
 
