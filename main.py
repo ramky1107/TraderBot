@@ -11,7 +11,7 @@ Provides both CLI and Web API interfaces.
 import os
 import logging
 from typing import Dict
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -177,6 +177,103 @@ def api_groww_news_outlook():
     except Exception as e:
         logger.error(f"Groww outlook API error: {e}")
         return jsonify({'error': str(e), 'status': 'error'}), 500
+
+@app.route('/partials/<path:filename>')
+def serve_partial(filename: str):
+    """Serve HTML partial fragments from static/partials/ for the frontend."""
+    try:
+        return send_from_directory('static/partials', filename)
+    except Exception as e:
+        logger.warning(f"Partial not found: {filename} - {e}")
+        return ("", 404)
+
+
+@app.route('/favicon.ico')
+def favicon():
+    # Return 204 when favicon file is not present to avoid noisy 404s
+    try:
+        return send_from_directory('static', 'favicon.ico')
+    except Exception:
+        return ('', 204)
+
+
+@app.route('/api/stock-data')
+def api_stock_data():
+    """Return OHLCV + simple indicators for a ticker (compat with frontend).
+
+    Query params: ticker, period, interval
+    """
+    ticker = request.args.get('ticker', '').upper()
+    period = request.args.get('period', '1mo')
+    interval = request.args.get('interval', '1d')
+
+    if not ticker:
+        return jsonify({'error': 'ticker required'}), 400
+
+    if data_fetcher is None:
+        return jsonify({'error': 'DataFetcher unavailable on this instance'}), 503
+
+    try:
+        df = data_fetcher.fetch_stock_data(ticker, period=period, interval=interval)
+        if df.empty:
+            return jsonify({'error': f'No data for {ticker}'}), 404
+
+        # Apply strategies if available
+        if strategies is not None:
+            try:
+                df = strategies.apply_strategies(df)
+            except Exception:
+                pass
+
+        # Simple serialisation
+        return jsonify({
+            'ticker': ticker,
+            'dates': [d.strftime('%Y-%m-%d %H:%M:%S') for d in df.index],
+            'open': df['Open'].tolist(),
+            'high': df['High'].tolist(),
+            'low': df['Low'].tolist(),
+            'close': df['Close'].tolist(),
+            'volume': df['Volume'].tolist(),
+        })
+    except Exception as e:
+        logger.error(f"/api/stock-data error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/live-price')
+def api_live_price():
+    """Return a simple live price summary for a ticker. Compatible with frontend calls."""
+    ticker = request.args.get('ticker', '').upper()
+    if not ticker:
+        return jsonify({'error': 'ticker required'}), 400
+
+    if data_fetcher is None:
+        return jsonify({'error': 'DataFetcher unavailable on this instance'}), 503
+
+    try:
+        # Fetch recent intraday / daily data to approximate live price
+        df = data_fetcher.fetch_stock_data(ticker, period='5d', interval='1d')
+        if df.empty:
+            return jsonify({'error': 'No live data'}), 404
+
+        current_price = float(df['Close'].iloc[-1])
+        open_price = float(df['Open'].iloc[0]) if len(df) > 0 else current_price
+        change = current_price - open_price
+        change_pct = (change / open_price) * 100 if open_price != 0 else 0
+
+        return jsonify({
+            'ticker': ticker,
+            'current_price': round(current_price, 2),
+            'open': round(open_price, 2),
+            'high': round(float(df['High'].max()), 2),
+            'low': round(float(df['Low'].min()), 2),
+            'change': round(change, 2),
+            'change_pct': round(change_pct, 2),
+            'timestamp': '',
+        })
+    except Exception as e:
+        logger.error(f"/api/live-price error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # ─── Execution ─────────────────────────────────────────────────────────────
 
