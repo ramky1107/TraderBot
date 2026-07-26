@@ -79,7 +79,7 @@ NEWS_SCORE_CAP = 30
 # ─── Headline Classifier ──────────────────────────────────────────────────────
 
 def build_market_news_url(company_url: str) -> str:
-    """Return the Groww market-news URL for a company page link."""
+    """Build the Groww market-news URL for a company page link."""
     if not company_url:
         return ''
     company_url = company_url.rstrip('/')
@@ -90,8 +90,8 @@ def build_market_news_url(company_url: str) -> str:
 
 def _classify_headline(title: str) -> tuple[int, str]:
     """
-    Classify a single headline as bullish, bearish, or neutral using keyword
-    matching. Returns (net_score, label).
+    Classify a single headline as bullish, bearish, or neutral using keyword matching.
+    Returns a score and a label for the headline sentiment.
 
     Args:
         title: Raw headline text.
@@ -112,8 +112,8 @@ def _classify_headline(title: str) -> tuple[int, str]:
 
 def fetch_news_sentiment(ticker: str) -> tuple[float, list[dict], str, int]:
     """
-    Fetch recent news for `ticker` via yfinance and run keyword-based
-    sentiment analysis on up to 15 headlines.
+    Fetch recent news for a ticker through yfinance and score the headlines.
+    This provides a lightweight sentiment signal for the stock.
 
     Args:
         ticker: Stock symbol (e.g. 'RELIANCE.NS').
@@ -177,8 +177,8 @@ _PULSE_HEADERS = {
 
 def _scrape_pulse_structured(soup: BeautifulSoup) -> list[dict]:
     """
-    Try to extract headlines from known Zerodha Pulse CSS selectors.
-    Returns up to 15 headline dicts.
+    Extract headlines from known Zerodha Pulse CSS selectors.
+    Returns up to 15 headline entries for display or analysis.
     """
     headlines: list[dict] = []
     items = soup.select('.feed-item, li.box, .item, article')
@@ -198,8 +198,8 @@ def _scrape_pulse_structured(soup: BeautifulSoup) -> list[dict]:
 
 def _scrape_pulse_fallback(soup: BeautifulSoup) -> list[dict]:
     """
-    Fallback scraper: extract any <a> tag with text longer than 30 chars.
-    Used when the structured scraper finds no items.
+    Fall back to generic link extraction when the structured scraper finds no items.
+    This keeps the news collection logic resilient.
     """
     headlines: list[dict] = []
     for a_tag in soup.find_all('a', href=True)[:30]:
@@ -215,7 +215,7 @@ def _scrape_pulse_fallback(soup: BeautifulSoup) -> list[dict]:
 def get_pulse_news() -> dict:
     """
     Scrape the Zerodha Pulse homepage for market headlines.
-    Tries structured CSS selectors first, falls back to link extraction.
+    The function tries structured selectors first and falls back to generic link parsing.
 
     Returns:
         Dict with keys 'headlines' (list of dicts) and 'source' (str).
@@ -243,7 +243,7 @@ GROWW_PAGE_CACHE: dict = {}
 
 
 def fetch_groww_news(page: int = 1, size: int = 50) -> list[dict]:
-    """Fetch latest stock-news-summary items from Groww's public feed with short caching."""
+    """Fetch recent stock-news-summary items from Groww's public feed with short caching."""
     now = time.time()
     if now - GROWW_FEED_CACHE['fetched_at'] < 300 and GROWW_FEED_CACHE['items']:
         return GROWW_FEED_CACHE['items']
@@ -280,7 +280,7 @@ def fetch_groww_news(page: int = 1, size: int = 50) -> list[dict]:
 
 
 def derive_outlook_from_news(company: str, title: str, body: str, page_excerpt: str = '') -> dict:
-    """Convert Groww news into a simple bullish/bearish/neutral trading outlook."""
+    """Convert Groww news text into a simple bullish, bearish, mixed, or neutral trading outlook."""
     text = ' '.join([company or '', title or '', body or '', page_excerpt or '']).lower()
 
     bullish_hits = [kw for kw in ['profit', 'strong', 'rise', 'rally', 'beat', 'record', 'growth', 'upgrade', 'order', 'surge', 'gain', 'outperform', 'expansion', 'dividend', 'acquisition'] if kw in text]
@@ -353,7 +353,7 @@ def _fetch_market_news_excerpt(company_url: str) -> str:
 
 
 def get_groww_company_outlook(company: str, company_url: str = '', page_excerpt: str = '') -> dict:
-    """Fetch Groww feed items for the company and build a trading outlook."""
+    """Fetch Groww feed items for a company and build a concise trading outlook."""
     items = fetch_groww_news()
     matching = []
     for item in items:
@@ -390,7 +390,7 @@ def get_groww_company_outlook(company: str, company_url: str = '', page_excerpt:
 
 def get_gemini_news_headlines(company: str, headlines: list[str] | list[dict]) -> dict:
     """
-    Use Google Gemini to simplify and process news headlines for a company.
+    Use Google Gemini to simplify and summarize news headlines for a company.
     Returns headlines in simple English suitable for further processing.
 
     Args:
@@ -542,7 +542,7 @@ SUMMARY: [2-3 sentence summary]
 
 def process_company_news_gemini(company: str, ticker: str | None = None) -> dict:
     """
-    Fetch the latest news for a company and process it with Gemini.
+    Fetch the latest news for a company and process it with Gemini for easier reading.
 
     Args:
         company: Company name (e.g., 'Apple')

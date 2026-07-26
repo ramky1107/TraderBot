@@ -23,9 +23,10 @@ OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma3:1b')
 OLLAMA_BASE_URL = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
 
 class SentimentEngine:
-    """Uses Ollama to determine sentiment of news or tweets."""
+    """Use an Ollama-backed model to label text as positive, negative, or neutral."""
 
     def __init__(self, model: str = OLLAMA_MODEL):
+        """Store the model name used for sentiment inference."""
         self.model = model
         try:
             # We assume Ollama is running on the local machine as per user's request.
@@ -35,7 +36,7 @@ class SentimentEngine:
             logger.error(f"[Ollama] Connection error: {e}")
 
     def analyze_sentiment(self, text: str) -> str:
-        """Classifies a single text as positive, negative, or neutral.
+        """Classify a single text snippet and return one of the supported sentiment labels.
         
         Args:
             text: The headline or tweet to analyze.
@@ -67,7 +68,7 @@ class SentimentEngine:
             return 'Neutral'
 
     def batch_analyze(self, texts: List[str]) -> List[Dict]:
-        """Analyzes a list of texts and returns detailed results.
+        """Analyze a list of texts and return the sentiment label for each entry.
         
         Args:
             texts: List of strings (headlines/tweets).
@@ -85,7 +86,7 @@ class SentimentEngine:
         return results
 
     def get_aggregate_score(self, analyzed_items: List[Dict]) -> float:
-        """Calculates a score from -100 to +100 based on results."""
+        """Convert a set of sentiment labels into a single normalized score from -100 to +100."""
         if not analyzed_items:
             return 0.0
         

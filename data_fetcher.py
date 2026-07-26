@@ -34,13 +34,14 @@ X_ACCESS_TOKEN_SECRET = os.getenv('X_ACCESS_TOKEN_SECRET')
 DEFAULT_EXCHANGE = os.getenv('DEFAULT_EXCHANGE', 'NYSE')
 
 class DataFetcher:
-    """Handles all external data fetching requirements."""
+    """Coordinate data retrieval from Twitter, Yahoo Finance, and market calendars."""
 
     def __init__(self):
+        """Initialize the fetcher and connect to Twitter when credentials are available."""
         self._setup_twitter()
 
     def _setup_twitter(self):
-        """Initializes Tweepy client if credentials exist."""
+        """Create the Tweepy client if a bearer token is configured."""
         try:
             if X_BEARER_TOKEN:
                 self.twitter_client = tweepy.Client(bearer_token=X_BEARER_TOKEN)
@@ -53,7 +54,7 @@ class DataFetcher:
             self.twitter_client = None
 
     def fetch_tweets(self, ticker: str, count: int = 10) -> List[str]:
-        """Fetches recent tweets for a given ticker.
+        """Fetch recent tweets for a ticker so they can be used in sentiment analysis.
         
         Args:
             ticker: The stock ticker (e.g., 'AAPL' or '$AAPL').
@@ -81,7 +82,7 @@ class DataFetcher:
             return []
 
     def fetch_stock_data(self, ticker: str, period: str = '1y', interval: str = '1d') -> pd.DataFrame:
-        """Fetches historical stock data and cleans it for trading days.
+        """Download OHLCV price history and clean it for charting and analysis.
         
         Args:
             ticker: Stock symbol.
@@ -112,7 +113,7 @@ class DataFetcher:
             return pd.DataFrame()
 
     def _filter_trading_days(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Removes rows that are not on actual trading days (using market calendars)."""
+        """Remove rows that fall outside actual market trading days."""
         if df.empty: return df
         
         # Determine the calendar based on exchange (simplified for this package)
@@ -134,7 +135,7 @@ class DataFetcher:
         return df
 
     def get_stock_info(self, ticker: str) -> Dict:
-        """Fetches fundamental data for intrinsic value calculation."""
+        """Fetch fundamental company data used for valuation and ratio calculations."""
         try:
             stock = yf.Ticker(ticker)
             return stock.info

@@ -106,7 +106,7 @@ else:
 # ─── Core Logic ─────────────────────────────────────────────────────────────
 
 def analyze_ticker(ticker: str) -> Dict:
-    """Orchestrates the analysis of a given stock ticker."""
+    """Run the full stock-analysis pipeline for a ticker and return a summary payload."""
     logger.info(f"Analyzing ticker: {ticker}")
 
     if data_fetcher is None or sentiment_engine is None or valuation_engine is None:
@@ -148,12 +148,12 @@ def analyze_ticker(ticker: str) -> Dict:
 
 @app.route('/')
 def index():
-    """Serves the main dashboard."""
+    """Serve the main dashboard page for the web UI."""
     return render_template('index.html')
 
 @app.route('/api/analyze/<ticker>')
 def api_analyze(ticker: str):
-    """Endpoint for ticker analysis."""
+    """Expose the stock-analysis workflow through a JSON API endpoint."""
     try:
         result = analyze_ticker(ticker.upper())
         return jsonify(result)
@@ -163,7 +163,7 @@ def api_analyze(ticker: str):
 
 @app.route('/api/history/<ticker>')
 def api_history(ticker: str):
-    """Endpoint for historical price data (cleaned for display)."""
+    """Return cleaned historical price data formatted for charting."""
     try:
         df = data_fetcher.fetch_stock_data(ticker.upper())
         if df.empty:
@@ -181,7 +181,7 @@ def api_history(ticker: str):
 
 @app.route('/api/groww-news-outlook')
 def api_groww_news_outlook():
-    """Return a simple day-trading outlook based on Groww's latest company news."""
+    """Return a short trading outlook created from Groww news content."""
     try:
         company = request.args.get('company', '').strip()
         company_url = request.args.get('company_url', '').strip()
@@ -194,7 +194,7 @@ def api_groww_news_outlook():
 
 @app.route('/partials/<path:filename>')
 def serve_partial(filename: str):
-    """Serve HTML partial fragments from static/partials/ for the frontend."""
+    """Serve HTML partial fragments from the frontend template directory."""
     try:
         return send_from_directory('static/partials', filename)
     except Exception as e:
@@ -204,7 +204,7 @@ def serve_partial(filename: str):
 
 @app.route('/favicon.ico')
 def favicon():
-    # Return 204 when favicon file is not present to avoid noisy 404s
+    """Return the site favicon when available and avoid noisy missing-file errors."""
     try:
         return send_from_directory('static', 'favicon.ico')
     except Exception:
@@ -213,7 +213,7 @@ def favicon():
 
 @app.route('/api/stock-data')
 def api_stock_data():
-    """Return OHLCV + simple indicators for a ticker (compat with frontend).
+    """Return OHLCV data plus optional strategy overlays for the frontend chart view.
 
     Query params: ticker, period, interval
     """
@@ -256,7 +256,7 @@ def api_stock_data():
 
 @app.route('/api/live-price')
 def api_live_price():
-    """Return a simple live price summary for a ticker. Compatible with frontend calls."""
+    """Return a lightweight live-price summary for the current ticker selection."""
     ticker = request.args.get('ticker', '').upper()
     if not ticker:
         return jsonify({'error': 'ticker required'}), 400
@@ -293,7 +293,7 @@ def api_live_price():
 # ─── Financial Ratios Endpoint ──────────────────────────────────────────────
 @app.route('/api/financial-ratios')
 def api_financial_ratios():
-    """Return simple financial ratios for a ticker."""
+    """Return commonly used valuation ratios for a requested ticker."""
     ticker = request.args.get('ticker', '').upper()
     if not ticker:
         return jsonify({'error': 'ticker required'}), 400
@@ -324,7 +324,7 @@ def api_financial_ratios():
 # ─── Sentiment Score Endpoint (basic) ───────────────────────────────────────
 @app.route('/api/sentiment-score')
 def api_sentiment_score():
-    """Return a simple news-based sentiment score for a ticker."""
+    """Return a news-driven sentiment score for the requested ticker."""
     ticker = request.args.get('ticker', '').upper()
     if not ticker:
         return jsonify({'error': 'ticker required'}), 400
@@ -349,7 +349,7 @@ def api_sentiment_score():
 if socketio is None:
     @app.route('/socket.io/')
     def socketio_fallback():
-        # Respond OK to polling attempts to avoid repeated 404 noise.
+        """Respond to Socket.IO polling probes so missing Socket.IO support does not raise noise."""
         return ('', 200)
 
 # ─── Execution ─────────────────────────────────────────────────────────────

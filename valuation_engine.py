@@ -17,10 +17,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ValuationEngine:
-    """Calculates intrinsic values based on financial fundamentals."""
+    """Estimate a stock's intrinsic value using simple valuation heuristics."""
 
     def calculate_intrinsic_value(self, info: Dict, current_price: float) -> Tuple[float, float]:
-        """Calculates intrinsic price and percentage difference.
+        """Estimate intrinsic value and compare it with the current market price.
         
         Args:
             info: Dictionary of stock info (from yfinance).
@@ -55,7 +55,7 @@ class ValuationEngine:
         return round(intrinsic_price, 2), round(diff_percent, 2)
 
     def _graham_number(self, info: Dict) -> float:
-        """Calculates Graham Number: sqrt(22.5 * EPS * BookValue)."""
+        """Calculate the Graham Number from earnings and book value when available."""
         try:
             eps = info.get('trailingEps') or info.get('forwardEps')
             book_value = info.get('bookValue')
@@ -68,7 +68,7 @@ class ValuationEngine:
             return 0.0
 
     def _simplified_dcf(self, info: Dict) -> float:
-        """Calculates a simplified DCF based on Free Cash Flow or Earnings Growth.
+        """Calculate a simplified discounted-cash-flow estimate from free cash flow data.
         
         Note: This is a highly simplified model for demonstration.
         """
