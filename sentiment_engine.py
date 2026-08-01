@@ -7,9 +7,9 @@ Classifies text as 'Positive', 'Negative', or 'Neutral'.
 =============================================================================
 """
 
-import os
 import logging
-from typing import List, Dict
+import os
+
 import ollama
 from dotenv import load_dotenv
 
@@ -19,8 +19,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma3:1b')
-OLLAMA_BASE_URL = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:1b")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
 
 class SentimentEngine:
     """Use an Ollama-backed model to label text as positive, negative, or neutral."""
@@ -37,10 +38,10 @@ class SentimentEngine:
 
     def analyze_sentiment(self, text: str) -> str:
         """Classify a single text snippet and return one of the supported sentiment labels.
-        
+
         Args:
             text: The headline or tweet to analyze.
-            
+
         Returns:
             A string label (Positive/Negative/Neutral).
         """
@@ -53,46 +54,41 @@ class SentimentEngine:
         Sentiment:"""
 
         try:
-            response = ollama.generate(
-                model=self.model,
-                prompt=prompt,
-                stream=False
-            )
-            sentiment = response.get('response', '').strip().capitalize()
+            response = ollama.generate(model=self.model, prompt=prompt, stream=False)
+            sentiment = response.get("response", "").strip().capitalize()
             # Basic validation
-            if 'Positive' in sentiment: return 'Positive'
-            if 'Negative' in sentiment: return 'Negative'
-            return 'Neutral'
+            if "Positive" in sentiment:
+                return "Positive"
+            if "Negative" in sentiment:
+                return "Negative"
+            return "Neutral"
         except Exception as e:
             logger.error(f"[Ollama] Analysis error: {e}")
-            return 'Neutral'
+            return "Neutral"
 
-    def batch_analyze(self, texts: List[str]) -> List[Dict]:
+    def batch_analyze(self, texts: list[str]) -> list[dict]:
         """Analyze a list of texts and return the sentiment label for each entry.
-        
+
         Args:
             texts: List of strings (headlines/tweets).
-            
+
         Returns:
             List of dicts with 'text' and 'sentiment'.
         """
         results = []
         for text in texts:
             sentiment = self.analyze_sentiment(text)
-            results.append({
-                'text': text,
-                'sentiment': sentiment
-            })
+            results.append({"text": text, "sentiment": sentiment})
         return results
 
-    def get_aggregate_score(self, analyzed_items: List[Dict]) -> float:
+    def get_aggregate_score(self, analyzed_items: list[dict]) -> float:
         """Convert a set of sentiment labels into a single normalized score from -100 to +100."""
         if not analyzed_items:
             return 0.0
-        
-        weights = {'Positive': 1, 'Negative': -1, 'Neutral': 0}
-        total_score = sum(weights.get(item['sentiment'], 0) for item in analyzed_items)
-        
+
+        weights = {"Positive": 1, "Negative": -1, "Neutral": 0}
+        total_score = sum(weights.get(item["sentiment"], 0) for item in analyzed_items)
+
         # Normalize to -100 to 100
         normalized = (total_score / len(analyzed_items)) * 100
         return round(normalized, 2)

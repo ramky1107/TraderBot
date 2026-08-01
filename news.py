@@ -16,20 +16,19 @@ Used by:
 =============================================================================
 """
 
-import traceback
+import logging
+import os
 import time
+import traceback
+
 import numpy as np
 import requests as http_requests
 import yfinance as yf
 from bs4 import BeautifulSoup
-import os
-import logging
-import json
-from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 try:
-    import google.genai as genai
+    from google import genai
 except Exception:  # pragma: no cover - optional dependency fallback
     genai = None
 
@@ -39,37 +38,87 @@ load_dotenv()
 # Setup logging
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-USE_GEMINI_NEWS = os.getenv('USE_GEMINI_NEWS', 'True').lower() == 'true'
-MAX_HEADLINES = int(os.getenv('MAX_HEADLINES_PER_COMPANY', '5'))
-GEMINI_NEWS_MODEL = os.getenv('GEMINI_NEWS_MODEL', 'gemini-1.5-flash')
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+USE_GEMINI_NEWS = os.getenv("USE_GEMINI_NEWS", "True").lower() == "true"
+MAX_HEADLINES = int(os.getenv("MAX_HEADLINES_PER_COMPANY", "5"))
+GEMINI_NEWS_MODEL = os.getenv("GEMINI_NEWS_MODEL", "gemini-1.5-flash")
 
 # Configure Gemini
 if GEMINI_API_KEY:
-    logger.info('[Gemini] News module configured with API key.')
+    logger.info("[Gemini] News module configured with API key.")
 else:
-    logger.warning('[Gemini] API key not found. Gemini news processing disabled.')
+    logger.warning("[Gemini] API key not found. Gemini news processing disabled.")
 
 # ─── Sentiment Keyword Lists ──────────────────────────────────────────────────
 
 # Words that suggest bullish market sentiment
 BULLISH_KEYWORDS = [
-    'surge', 'rally', 'gain', 'rise', 'jump', 'soar', 'record',
-    'strong', 'beat', 'exceed', 'upgrade', 'buy', 'growth',
-    'profit', 'earnings beat', 'outperform', 'bullish', 'positive',
-    'high', 'boost', 'up', 'recover', 'breakout', 'momentum',
-    'expansion', 'optimistic', 'innovative', 'opportunity',
-    'dividend', 'stock split', 'acquisition',
+    "surge",
+    "rally",
+    "gain",
+    "rise",
+    "jump",
+    "soar",
+    "record",
+    "strong",
+    "beat",
+    "exceed",
+    "upgrade",
+    "buy",
+    "growth",
+    "profit",
+    "earnings beat",
+    "outperform",
+    "bullish",
+    "positive",
+    "high",
+    "boost",
+    "up",
+    "recover",
+    "breakout",
+    "momentum",
+    "expansion",
+    "optimistic",
+    "innovative",
+    "opportunity",
+    "dividend",
+    "stock split",
+    "acquisition",
 ]
 
 # Words that suggest bearish market sentiment
 BEARISH_KEYWORDS = [
-    'fall', 'drop', 'decline', 'crash', 'plunge', 'loss',
-    'weak', 'miss', 'downgrade', 'sell', 'warning', 'concern',
-    'risk', 'bearish', 'negative', 'low', 'cut', 'down',
-    'recession', 'lawsuit', 'investigation', 'fraud', 'debt',
-    'layoff', 'bankruptcy', 'default', 'penalty', 'shortage',
-    'overvalued', 'bubble', 'correction',
+    "fall",
+    "drop",
+    "decline",
+    "crash",
+    "plunge",
+    "loss",
+    "weak",
+    "miss",
+    "downgrade",
+    "sell",
+    "warning",
+    "concern",
+    "risk",
+    "bearish",
+    "negative",
+    "low",
+    "cut",
+    "down",
+    "recession",
+    "lawsuit",
+    "investigation",
+    "fraud",
+    "debt",
+    "layoff",
+    "bankruptcy",
+    "default",
+    "penalty",
+    "shortage",
+    "overvalued",
+    "bubble",
+    "correction",
 ]
 
 # Maximum score contribution from news component
@@ -78,14 +127,15 @@ NEWS_SCORE_CAP = 30
 
 # ─── Headline Classifier ──────────────────────────────────────────────────────
 
+
 def build_market_news_url(company_url: str) -> str:
     """Build the Groww market-news URL for a company page link."""
     if not company_url:
-        return ''
-    company_url = company_url.rstrip('/')
-    if company_url.endswith('/market-news'):
+        return ""
+    company_url = company_url.rstrip("/")
+    if company_url.endswith("/market-news"):
         return company_url
-    return f'{company_url}/market-news'
+    return f"{company_url}/market-news"
 
 
 def _classify_headline(title: str) -> tuple[int, str]:
@@ -100,15 +150,16 @@ def _classify_headline(title: str) -> tuple[int, str]:
         Tuple of (net_keyword_count, label) where label is
         'positive', 'negative', or 'neutral'.
     """
-    text       = title.lower()
+    text = title.lower()
     bull_count = sum(1 for kw in BULLISH_KEYWORDS if kw in text)
     bear_count = sum(1 for kw in BEARISH_KEYWORDS if kw in text)
-    net        = bull_count - bear_count
-    label      = 'positive' if net > 0 else ('negative' if net < 0 else 'neutral')
+    net = bull_count - bear_count
+    label = "positive" if net > 0 else ("negative" if net < 0 else "neutral")
     return net, label
 
 
 # ─── yfinance News Sentiment ──────────────────────────────────────────────────
+
 
 def fetch_news_sentiment(ticker: str) -> tuple[float, list[dict], str, int]:
     """
@@ -127,7 +178,7 @@ def fetch_news_sentiment(ticker: str) -> tuple[float, list[dict], str, int]:
     """
     try:
         stock = yf.Ticker(ticker)
-        news  = stock.news
+        news = stock.news
 
         if not news:
             return 0.0, [], "No news available", 0
@@ -137,16 +188,18 @@ def fetch_news_sentiment(ticker: str) -> tuple[float, list[dict], str, int]:
 
         # Analyze up to 15 most recent articles
         for item in news[:15]:
-            title     = item.get('title', '') or ''
-            publisher = item.get('publisher', '') or ''
+            title = item.get("title", "") or ""
+            publisher = item.get("publisher", "") or ""
             net, label = _classify_headline(title)
             total_sentiment += net
-            headlines.append({
-                'title':     title,
-                'publisher': publisher,
-                'sentiment': label,
-                'url':       item.get('link', '#'),
-            })
+            headlines.append(
+                {
+                    "title": title,
+                    "publisher": publisher,
+                    "sentiment": label,
+                    "url": item.get("link", "#"),
+                }
+            )
 
         analyzed = len(headlines)
         if analyzed == 0:
@@ -154,23 +207,28 @@ def fetch_news_sentiment(ticker: str) -> tuple[float, list[dict], str, int]:
 
         # Normalize: average sentiment per article, scaled to ±30
         avg_sentiment = total_sentiment / analyzed
-        news_score    = float(np.clip(avg_sentiment * 10, -NEWS_SCORE_CAP, NEWS_SCORE_CAP))
+        news_score = float(np.clip(avg_sentiment * 10, -NEWS_SCORE_CAP, NEWS_SCORE_CAP))
 
-        return round(news_score, 2), headlines, f"Analyzed {analyzed} articles", analyzed
+        return (
+            round(news_score, 2),
+            headlines,
+            f"Analyzed {analyzed} articles",
+            analyzed,
+        )
 
     except Exception as e:
         print(f"[News] Sentiment error for {ticker}: {e}")
         traceback.print_exc()
-        return 0.0, [], f"Error: {str(e)}", 0
+        return 0.0, [], f"Error: {e!s}", 0
 
 
 # ─── Zerodha Pulse Scraper ────────────────────────────────────────────────────
 
 _PULSE_HEADERS = {
-    'User-Agent': (
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-        'AppleWebKit/537.36 (KHTML, like Gecko) '
-        'Chrome/120.0.0.0 Safari/537.36'
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
     )
 }
 
@@ -181,17 +239,19 @@ def _scrape_pulse_structured(soup: BeautifulSoup) -> list[dict]:
     Returns up to 15 headline entries for display or analysis.
     """
     headlines: list[dict] = []
-    items = soup.select('.feed-item, li.box, .item, article')
+    items = soup.select(".feed-item, li.box, .item, article")
 
     for item in items[:15]:
-        title_el  = item.find('a') or item
-        title     = title_el.get_text(strip=True)
-        href      = title_el.get('href', '') if title_el.name == 'a' else ''
-        pub_el    = item.find(class_='publisher') or item.find(class_='source')
-        publisher = pub_el.get_text(strip=True) if pub_el else 'Pulse'
+        title_el = item.find("a") or item
+        title = title_el.get_text(strip=True)
+        href = title_el.get("href", "") if title_el.name == "a" else ""
+        pub_el = item.find(class_="publisher") or item.find(class_="source")
+        publisher = pub_el.get_text(strip=True) if pub_el else "Pulse"
 
         if title and len(title) > 10:
-            headlines.append({'title': title[:150], 'url': href, 'publisher': publisher})
+            headlines.append(
+                {"title": title[:150], "url": href, "publisher": publisher}
+            )
 
     return headlines
 
@@ -202,11 +262,11 @@ def _scrape_pulse_fallback(soup: BeautifulSoup) -> list[dict]:
     This keeps the news collection logic resilient.
     """
     headlines: list[dict] = []
-    for a_tag in soup.find_all('a', href=True)[:30]:
+    for a_tag in soup.find_all("a", href=True)[:30]:
         title = a_tag.get_text(strip=True)
-        href  = a_tag.get('href', '')
+        href = a_tag.get("href", "")
         if title and len(title) > 30:
-            headlines.append({'title': title[:150], 'url': href, 'publisher': 'Pulse'})
+            headlines.append({"title": title[:150], "url": href, "publisher": "Pulse"})
             if len(headlines) >= 15:
                 break
     return headlines
@@ -221,102 +281,156 @@ def get_pulse_news() -> dict:
         Dict with keys 'headlines' (list of dicts) and 'source' (str).
     """
     resp = http_requests.get(
-        'https://pulse.zerodha.com/',
-        headers=_PULSE_HEADERS,
-        timeout=10
+        "https://pulse.zerodha.com/", headers=_PULSE_HEADERS, timeout=10
     )
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, 'lxml')
+    soup = BeautifulSoup(resp.text, "lxml")
 
     headlines = _scrape_pulse_structured(soup)
     if not headlines:
         headlines = _scrape_pulse_fallback(soup)
 
-    return {'headlines': headlines, 'source': 'Zerodha Pulse'}
+    return {"headlines": headlines, "source": "Zerodha Pulse"}
 
 
 # ─── Groww Feed Parsing ───────────────────────────────────────────────────────
 
-GROWW_FEED_URL = 'https://groww.in/v2/api/feed/public?page=1&publisherId=stocknewssummary&size=50'
-GROWW_FEED_CACHE: dict = {'items': [], 'fetched_at': 0.0}
+GROWW_FEED_URL = (
+    "https://groww.in/v2/api/feed/public?page=1&publisherId=stocknewssummary&size=50"
+)
+GROWW_FEED_CACHE: dict = {"items": [], "fetched_at": 0.0}
 GROWW_PAGE_CACHE: dict = {}
 
 
 def fetch_groww_news(page: int = 1, size: int = 50) -> list[dict]:
     """Fetch recent stock-news-summary items from Groww's public feed with short caching."""
     now = time.time()
-    if now - GROWW_FEED_CACHE['fetched_at'] < 300 and GROWW_FEED_CACHE['items']:
-        return GROWW_FEED_CACHE['items']
+    if now - GROWW_FEED_CACHE["fetched_at"] < 300 and GROWW_FEED_CACHE["items"]:
+        return GROWW_FEED_CACHE["items"]
 
     try:
-        url = GROWW_FEED_URL.replace('page=1', f'page={page}').replace('size=50', f'size={size}')
-        resp = http_requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+        url = GROWW_FEED_URL.replace("page=1", f"page={page}").replace(
+            "size=50", f"size={size}"
+        )
+        resp = http_requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         resp.raise_for_status()
         payload = resp.json()
-        feed = payload.get('feed', []) if isinstance(payload, dict) else []
+        feed = payload.get("feed", []) if isinstance(payload, dict) else []
         items = []
         for entry in feed:
-            data = entry.get('data', {}) or {}
-            cta = (data.get('cta') or [{}])[0] if data.get('cta') else {}
-            title = data.get('title') or entry.get('title') or ''
-            body = data.get('body') or ''
-            company_name = cta.get('ctaText') or entry.get('name') or ''
-            company_url = cta.get('ctaUrl') or ''
+            data = entry.get("data", {}) or {}
+            cta = (data.get("cta") or [{}])[0] if data.get("cta") else {}
+            title = data.get("title") or entry.get("title") or ""
+            body = data.get("body") or ""
+            company_name = cta.get("ctaText") or entry.get("name") or ""
+            company_url = cta.get("ctaUrl") or ""
             if title:
-                items.append({
-                    'company': company_name,
-                    'title': title,
-                    'body': body,
-                    'ctaUrl': company_url,
-                    'marketNewsUrl': build_market_news_url(company_url),
-                    'publishedAt': entry.get('publishedAt'),
-                })
-        GROWW_FEED_CACHE['items'] = items
-        GROWW_FEED_CACHE['fetched_at'] = now
+                items.append(
+                    {
+                        "company": company_name,
+                        "title": title,
+                        "body": body,
+                        "ctaUrl": company_url,
+                        "marketNewsUrl": build_market_news_url(company_url),
+                        "publishedAt": entry.get("publishedAt"),
+                    }
+                )
+        GROWW_FEED_CACHE["items"] = items
+        GROWW_FEED_CACHE["fetched_at"] = now
         return items
     except Exception as exc:
-        logger.warning(f'[Groww] Failed to fetch feed: {exc}')
-        return GROWW_FEED_CACHE['items'] or []
+        logger.warning(f"[Groww] Failed to fetch feed: {exc}")
+        return GROWW_FEED_CACHE["items"] or []
 
 
-def derive_outlook_from_news(company: str, title: str, body: str, page_excerpt: str = '') -> dict:
+def derive_outlook_from_news(
+    company: str, title: str, body: str, page_excerpt: str = ""
+) -> dict:
     """Convert Groww news text into a simple bullish, bearish, mixed, or neutral trading outlook."""
-    text = ' '.join([company or '', title or '', body or '', page_excerpt or '']).lower()
+    text = " ".join(
+        [company or "", title or "", body or "", page_excerpt or ""]
+    ).lower()
 
-    bullish_hits = [kw for kw in ['profit', 'strong', 'rise', 'rally', 'beat', 'record', 'growth', 'upgrade', 'order', 'surge', 'gain', 'outperform', 'expansion', 'dividend', 'acquisition'] if kw in text]
-    bearish_hits = [kw for kw in ['loss', 'fall', 'decline', 'drop', 'warn', 'risk', 'cut', 'miss', 'downgrade', 'fraud', 'bankruptcy', 'default', 'penalty', 'lawsuit', 'recession', 'weak', 'shortage'] if kw in text]
+    bullish_hits = [
+        kw
+        for kw in [
+            "profit",
+            "strong",
+            "rise",
+            "rally",
+            "beat",
+            "record",
+            "growth",
+            "upgrade",
+            "order",
+            "surge",
+            "gain",
+            "outperform",
+            "expansion",
+            "dividend",
+            "acquisition",
+        ]
+        if kw in text
+    ]
+    bearish_hits = [
+        kw
+        for kw in [
+            "loss",
+            "fall",
+            "decline",
+            "drop",
+            "warn",
+            "risk",
+            "cut",
+            "miss",
+            "downgrade",
+            "fraud",
+            "bankruptcy",
+            "default",
+            "penalty",
+            "lawsuit",
+            "recession",
+            "weak",
+            "shortage",
+        ]
+        if kw in text
+    ]
 
     if bullish_hits and not bearish_hits:
-        sentiment = 'bullish'
+        sentiment = "bullish"
     elif bearish_hits and not bullish_hits:
-        sentiment = 'bearish'
+        sentiment = "bearish"
     elif bullish_hits and bearish_hits:
-        sentiment = 'mixed'
+        sentiment = "mixed"
     else:
-        sentiment = 'neutral'
+        sentiment = "neutral"
 
-    if sentiment == 'bullish':
+    if sentiment == "bullish":
         summary = f"{company or 'The company'} is bullish from the latest headlines, with constructive catalysts that could support a positive intraday bias."
-        day_trade_plan = 'Watch for a breakout above the opening range and keep a tight stop if the move fails; prefer buying on strength with a defined risk.'
-    elif sentiment == 'bearish':
+        day_trade_plan = "Watch for a breakout above the opening range and keep a tight stop if the move fails; prefer buying on strength with a defined risk."
+    elif sentiment == "bearish":
         summary = f"{company or 'The company'} is bearish from the latest headlines, and the stock could remain under pressure today."
-        day_trade_plan = 'Watch for a breakdown below support and avoid aggressive longs until price stabilizes; prefer short setups only if momentum confirms.'
-    elif sentiment == 'mixed':
+        day_trade_plan = "Watch for a breakdown below support and avoid aggressive longs until price stabilizes; prefer short setups only if momentum confirms."
+    elif sentiment == "mixed":
         summary = f"{company or 'The company'} is mixed from the latest headlines, so the near-term move is likely to be choppy."
-        day_trade_plan = 'Trade the range until a clear breakout or breakdown appears; keep position size small and use strict stops.'
+        day_trade_plan = "Trade the range until a clear breakout or breakdown appears; keep position size small and use strict stops."
     else:
         summary = f"{company or 'The company'} is neutral from the latest headlines, with no clear directional catalyst yet."
-        day_trade_plan = 'Stay in a wait-and-watch mode and focus on price action around key support and resistance levels.'
+        day_trade_plan = "Stay in a wait-and-watch mode and focus on price action around key support and resistance levels."
 
     return {
-        'company': company or 'Unknown',
-        'sentiment': sentiment,
-        'summary': summary,
-        'day_trade_plan': day_trade_plan,
-        'bias': 'positive' if sentiment == 'bullish' else 'negative' if sentiment == 'bearish' else 'neutral',
-        'signals': {
-            'bullish_hits': bullish_hits[:5],
-            'bearish_hits': bearish_hits[:5],
+        "company": company or "Unknown",
+        "sentiment": sentiment,
+        "summary": summary,
+        "day_trade_plan": day_trade_plan,
+        "bias": (
+            "positive"
+            if sentiment == "bullish"
+            else "negative" if sentiment == "bearish" else "neutral"
+        ),
+        "signals": {
+            "bullish_hits": bullish_hits[:5],
+            "bearish_hits": bearish_hits[:5],
         },
     }
 
@@ -324,42 +438,52 @@ def derive_outlook_from_news(company: str, title: str, body: str, page_excerpt: 
 def _fetch_market_news_excerpt(company_url: str) -> str:
     """Fetch a short excerpt from the Groww market-news page for extra context."""
     if not company_url:
-        return ''
+        return ""
     market_news_url = build_market_news_url(company_url)
     if not market_news_url:
-        return ''
+        return ""
 
     cache_key = market_news_url
     now = time.time()
-    if cache_key in GROWW_PAGE_CACHE and now - GROWW_PAGE_CACHE[cache_key]['fetched_at'] < 600:
-        return GROWW_PAGE_CACHE[cache_key]['excerpt']
+    if (
+        cache_key in GROWW_PAGE_CACHE
+        and now - GROWW_PAGE_CACHE[cache_key]["fetched_at"] < 600
+    ):
+        return GROWW_PAGE_CACHE[cache_key]["excerpt"]
 
     try:
-        response = http_requests.get(market_news_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+        response = http_requests.get(
+            market_news_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15
+        )
         response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        meta_description = soup.find('meta', attrs={'name': 'description'})
-        if meta_description and meta_description.get('content'):
-            excerpt = meta_description['content'][:500]
+        soup = BeautifulSoup(response.text, "html.parser")
+        meta_description = soup.find("meta", attrs={"name": "description"})
+        if meta_description and meta_description.get("content"):
+            excerpt = meta_description["content"][:500]
         else:
-            title = soup.title.get_text(' ', strip=True) if soup.title else ''
-            text = ' '.join(soup.stripped_strings)
-            excerpt = ' '.join([title, text])[:500]
-        GROWW_PAGE_CACHE[cache_key] = {'excerpt': excerpt, 'fetched_at': now}
+            title = soup.title.get_text(" ", strip=True) if soup.title else ""
+            text = " ".join(soup.stripped_strings)
+            excerpt = f"{title} {text}"[:500]
+        GROWW_PAGE_CACHE[cache_key] = {"excerpt": excerpt, "fetched_at": now}
         return excerpt
     except Exception as exc:
-        logger.warning(f'[Groww] Failed to fetch market-news page excerpt: {exc}')
-        return GROWW_PAGE_CACHE.get(cache_key, {}).get('excerpt', '')
+        logger.warning(f"[Groww] Failed to fetch market-news page excerpt: {exc}")
+        return GROWW_PAGE_CACHE.get(cache_key, {}).get("excerpt", "")
 
 
-def get_groww_company_outlook(company: str, company_url: str = '', page_excerpt: str = '') -> dict:
+def get_groww_company_outlook(
+    company: str, company_url: str = "", page_excerpt: str = ""
+) -> dict:
     """Fetch Groww feed items for a company and build a concise trading outlook."""
     items = fetch_groww_news()
     matching = []
     for item in items:
-        if company and company.lower() in (item.get('company') or '').lower():
-            matching.append(item)
-        elif company_url and company_url.lower() in (item.get('ctaUrl') or '').lower():
+        if (
+            company
+            and company.lower() in (item.get("company") or "").lower()
+            or company_url
+            and company_url.lower() in (item.get("ctaUrl") or "").lower()
+        ):
             matching.append(item)
 
     if not page_excerpt and company_url:
@@ -368,25 +492,28 @@ def get_groww_company_outlook(company: str, company_url: str = '', page_excerpt:
     if matching:
         item = matching[0]
         return derive_outlook_from_news(
-            company=item.get('company') or company,
-            title=item.get('title', ''),
-            body=item.get('body', ''),
+            company=item.get("company") or company,
+            title=item.get("title", ""),
+            body=item.get("body", ""),
             page_excerpt=page_excerpt,
         )
 
     if items:
         first_item = items[0]
         return derive_outlook_from_news(
-            company=company or first_item.get('company', ''),
-            title=first_item.get('title', ''),
-            body=first_item.get('body', ''),
+            company=company or first_item.get("company", ""),
+            title=first_item.get("title", ""),
+            body=first_item.get("body", ""),
             page_excerpt=page_excerpt,
         )
 
-    return derive_outlook_from_news(company=company, title='', body='', page_excerpt=page_excerpt)
+    return derive_outlook_from_news(
+        company=company, title="", body="", page_excerpt=page_excerpt
+    )
 
 
 # ─── Gemini AI News Processing ───────────────────────────────────────────────────
+
 
 def get_gemini_news_headlines(company: str, headlines: list[str] | list[dict]) -> dict:
     """
@@ -406,13 +533,15 @@ def get_gemini_news_headlines(company: str, headlines: list[str] | list[dict]) -
           - 'raw_output': Full Gemini response for logging
     """
     if not USE_GEMINI_NEWS or not GEMINI_API_KEY or genai is None:
-        logger.warning(f'[Gemini News] Disabled for {company}. Set USE_GEMINI_NEWS=True and GEMINI_API_KEY, and ensure google-genai is installed.')
+        logger.warning(
+            f"[Gemini News] Disabled for {company}. Set USE_GEMINI_NEWS=True and GEMINI_API_KEY, and ensure google-genai is installed."
+        )
         return {
-            'company': company,
-            'headlines': [],
-            'summary': 'Gemini news processing disabled',
-            'status': 'disabled',
-            'raw_output': '',
+            "company": company,
+            "headlines": [],
+            "summary": "Gemini news processing disabled",
+            "status": "disabled",
+            "raw_output": "",
         }
 
     try:
@@ -421,21 +550,21 @@ def get_gemini_news_headlines(company: str, headlines: list[str] | list[dict]) -
         if headlines:
             for h in headlines[:MAX_HEADLINES]:
                 if isinstance(h, dict):
-                    headline_texts.append(h.get('title', str(h)))
+                    headline_texts.append(h.get("title", str(h)))
                 else:
                     headline_texts.append(str(h))
 
         if not headline_texts:
             return {
-                'company': company,
-                'headlines': [],
-                'summary': 'No headlines provided',
-                'status': 'empty',
-                'raw_output': '',
+                "company": company,
+                "headlines": [],
+                "summary": "No headlines provided",
+                "status": "empty",
+                "raw_output": "",
             }
 
         # Prepare headlines for Gemini
-        headlines_str = '\n'.join(f'- {h}' for h in headline_texts)
+        headlines_str = "\n".join(f"- {h}" for h in headline_texts)
 
         # Prompt for Gemini
         prompt = f"""You are a financial news analyst. Process the following news headlines for {company} and provide:
@@ -462,18 +591,17 @@ SUMMARY: [2-3 sentence summary]
         # Call Gemini API
         client = genai.Client(api_key=GEMINI_API_KEY)
         response = client.models.generate_content(
-            model=GEMINI_NEWS_MODEL,
-            contents=prompt
+            model=GEMINI_NEWS_MODEL, contents=prompt
         )
 
         raw_output = response.text
-        logger.info(f'[Gemini News] Raw output for {company}:\n{raw_output}')
+        logger.info(f"[Gemini News] Raw output for {company}:\n{raw_output}")
 
         # Parse response
-        lines = raw_output.split('\n')
+        lines = raw_output.split("\n")
         simplified_headlines = []
-        sentiment = 'neutral'
-        summary = ''
+        sentiment = "neutral"
+        summary = ""
 
         in_headlines_section = False
         in_summary_section = False
@@ -481,62 +609,64 @@ SUMMARY: [2-3 sentence summary]
         for line in lines:
             line_lower = line.lower().strip()
 
-            if 'headlines:' in line_lower:
+            if "headlines:" in line_lower:
                 in_headlines_section = True
                 in_summary_section = False
                 continue
 
-            if 'sentiment:' in line_lower:
+            if "sentiment:" in line_lower:
                 # Extract sentiment
-                sentiment = line_lower.replace('sentiment:', '').strip().split()[0]
+                sentiment = line_lower.replace("sentiment:", "").strip().split()[0]
                 in_headlines_section = False
                 in_summary_section = False
                 continue
 
-            if 'summary:' in line_lower:
+            if "summary:" in line_lower:
                 in_headlines_section = False
                 in_summary_section = True
                 # Get text after "SUMMARY:"
-                parts = line.split(':', 1)
+                parts = line.split(":", 1)
                 if len(parts) > 1:
-                    summary += parts[1].strip() + ' '
+                    summary += parts[1].strip() + " "
                 continue
 
             # Collect headlines
-            if in_headlines_section and line.strip().startswith('-'):
+            if in_headlines_section and line.strip().startswith("-"):
                 headline = line.strip()[1:].strip()
                 if headline and len(headline) > 5:
                     simplified_headlines.append(headline)
 
             # Collect summary
             if in_summary_section and line.strip():
-                summary += line.strip() + ' '
+                summary += line.strip() + " "
 
         # Ensure we have at least one headline
         if not simplified_headlines and headline_texts:
             simplified_headlines = headline_texts[:MAX_HEADLINES]
 
         result = {
-            'company': company,
-            'headlines': simplified_headlines[:MAX_HEADLINES],
-            'summary': summary.strip()[:200],
-            'sentiment': sentiment,
-            'status': 'success',
-            'raw_output': raw_output,
+            "company": company,
+            "headlines": simplified_headlines[:MAX_HEADLINES],
+            "summary": summary.strip()[:200],
+            "sentiment": sentiment,
+            "status": "success",
+            "raw_output": raw_output,
         }
 
-        logger.info(f'[Gemini News] Processed {company}: {len(simplified_headlines)} headlines extracted')
+        logger.info(
+            f"[Gemini News] Processed {company}: {len(simplified_headlines)} headlines extracted"
+        )
         return result
 
     except Exception as e:
-        logger.error(f'[Gemini News] Error processing {company}: {str(e)}')
+        logger.error(f"[Gemini News] Error processing {company}: {e!s}")
         logger.exception(e)
         return {
-            'company': company,
-            'headlines': [],
-            'summary': f'Error: {str(e)}',
-            'status': 'error',
-            'raw_output': f'Error: {str(e)}',
+            "company": company,
+            "headlines": [],
+            "summary": f"Error: {e!s}",
+            "status": "error",
+            "raw_output": f"Error: {e!s}",
         }
 
 
@@ -552,8 +682,8 @@ def process_company_news_gemini(company: str, ticker: str | None = None) -> dict
         Dict with processed headlines and analysis
     """
     if not USE_GEMINI_NEWS:
-        logger.warning('[Gemini News] Processing disabled.')
-        return {'status': 'disabled', 'company': company}
+        logger.warning("[Gemini News] Processing disabled.")
+        return {"status": "disabled", "company": company}
 
     try:
         headlines = []
@@ -564,23 +694,27 @@ def process_company_news_gemini(company: str, ticker: str | None = None) -> dict
                 stock = yf.Ticker(ticker)
                 news = stock.news
                 if news:
-                    headlines = [item.get('title', '') for item in news[:MAX_HEADLINES]]
-                    logger.info(f'[Gemini News] Fetched {len(headlines)} headlines from yfinance for {ticker}')
+                    headlines = [item.get("title", "") for item in news[:MAX_HEADLINES]]
+                    logger.info(
+                        f"[Gemini News] Fetched {len(headlines)} headlines from yfinance for {ticker}"
+                    )
             except Exception as e:
-                logger.warning(f'[Gemini News] Could not fetch yfinance news for {ticker}: {e}')
+                logger.warning(
+                    f"[Gemini News] Could not fetch yfinance news for {ticker}: {e}"
+                )
 
         # If no news from yfinance, create placeholder
         if not headlines:
-            headlines = [f'No recent news found for {company}']
+            headlines = [f"No recent news found for {company}"]
 
         # Process with Gemini
         result = get_gemini_news_headlines(company, headlines)
         return result
 
     except Exception as e:
-        logger.error(f'[Gemini News] Error in process_company_news_gemini: {e}')
+        logger.error(f"[Gemini News] Error in process_company_news_gemini: {e}")
         return {
-            'status': 'error',
-            'company': company,
-            'error': str(e),
+            "status": "error",
+            "company": company,
+            "error": str(e),
         }
