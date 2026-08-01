@@ -1,5 +1,6 @@
 import unittest
 
+from data_fetcher import DataFetcher
 from news import build_market_news_url, derive_outlook_from_news
 
 
@@ -19,6 +20,15 @@ class GrowwNewsTests(unittest.TestCase):
         self.assertEqual(result['sentiment'], 'bullish')
         self.assertIn('bullish', result['summary'].lower())
         self.assertIn('breakout', result['day_trade_plan'].lower())
+
+
+class DataFetcherFallbackTests(unittest.TestCase):
+    def test_fetch_tweets_falls_back_without_tweepy(self):
+        fetcher = DataFetcher()
+        tweets = fetcher.fetch_tweets('AAPL', count=3)
+
+        self.assertIsInstance(tweets, list)
+        self.assertTrue(len(tweets) >= 1)
 
 
 if __name__ == '__main__':

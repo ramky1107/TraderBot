@@ -12,11 +12,16 @@ Fetches data from multiple sources:
 import os
 import logging
 from typing import List, Dict, Optional
-import tweepy
+import requests as http_requests
 import yfinance as yf
 import pandas as pd
 import pandas_market_calendars as mcal
 from dotenv import load_dotenv
+
+try:
+    import tweepy
+except Exception:  # pragma: no cover - optional dependency fallback
+    tweepy = None
 
 load_dotenv()
 
@@ -42,6 +47,11 @@ class DataFetcher:
 
     def _setup_twitter(self):
         """Create the Tweepy client if a bearer token is configured."""
+        if tweepy is None:
+            self.twitter_client = None
+            logger.warning("[Twitter] Tweepy is not installed. Falling back to public search scraping.")
+            return
+
         try:
             if X_BEARER_TOKEN:
                 self.twitter_client = tweepy.Client(bearer_token=X_BEARER_TOKEN)
@@ -52,6 +62,46 @@ class DataFetcher:
         except Exception as e:
             logger.error(f"[Twitter] Connection error: {e}")
             self.twitter_client = None
+
+    def _fallback_tweets_from_public_search(self, ticker: str, count: int = 10) -> List[str]:
+        """Use a public web search fallback when API credentials are not available."""
+        ticker = ticker.lstrip('$').strip()
+        if not ticker:
+            return []
+
+        query = f'site:x.com "{ticker}" stock OR "{ticker}"'
+        url = 'https://html.duckduckgo.com/html/'
+        params = {'q': query}
+        headers = {'User-Agent': 'Mozilla/5.0'}
+
+        try:
+            response = http_requests.get(url, params=params, headers=headers, timeout=12)
+            response.raise_for_status()
+        except Exception as exc:
+            logger.warning(f"[Twitter] Public search fallback failed: {exc}")
+            return [f"No public tweet snippets were available for {ticker}."]
+
+        soup = None
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+        except Exception:
+            return [f"No public tweet snippets were available for {ticker}."]
+
+        snippets = []
+        for result in soup.select('.result__snippet')[:count]:
+            text = result.get_text(' ', strip=True)
+            if text:
+                snippets.append(text)
+
+        for link in soup.select('.result__a')[:count]:
+            text = link.get_text(' ', strip=True)
+            if text and text not in snippets:
+                snippets.append(text)
+
+        if not snippets:
+            return [f"No public tweet snippets were available for {ticker}."]
+        return snippets[:count]
 
     def fetch_tweets(self, ticker: str, count: int = 10) -> List[str]:
         """Fetch recent tweets for a ticker so they can be used in sentiment analysis.
@@ -64,22 +114,22 @@ class DataFetcher:
             List of tweet texts.
         """
         if not self.twitter_client:
-            return ["No Twitter credentials found. Returning placeholder tweet."]
+            return self._fallback_tweets_from_public_search(ticker, count=count)
 
         try:
             query = f"${ticker} lang:en -is:retweet"
             response = self.twitter_client.search_recent_tweets(
-                query=query, 
+                query=query,
                 max_results=count,
                 tweet_fields=['text']
             )
-            
+
             if response.data:
                 return [tweet.text for tweet in response.data]
-            return []
+            return self._fallback_tweets_from_public_search(ticker, count=count)
         except Exception as e:
             logger.error(f"[Twitter] Fetching error: {e}")
-            return []
+            return self._fallback_tweets_from_public_search(ticker, count=count)
 
     def fetch_stock_data(self, ticker: str, period: str = '1y', interval: str = '1d') -> pd.DataFrame:
         """Download OHLCV price history and clean it for charting and analysis.
